@@ -3,13 +3,18 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { TilesRenderer } from '3d-tiles-renderer';
 import { GoogleCloudAuthPlugin } from '3d-tiles-renderer/plugins';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { OutlinePass } from 'three/addons/postprocessing/OutlinePass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 
 // ═══ GOOGLE API KEY ═══
 const GOOGLE_API_KEY = 'AIzaSyA8hlBZf4nsKQ92rjyqxUUrxQ9Awh74_bQ';
 
 // ═══ STATE ═══
 const isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
-let scene, camera, renderer, clock;
+let scene, camera, renderer, clock, composer;
 let tilesRenderer;
 let player;
 let velY = 0, onGround = true;
@@ -133,10 +138,99 @@ async function geocode(query) {
   };
 }
 
+// ═══ CARTOONIFY MATERIALS ═══
+function cartoonifyMaterial(mesh) {
+  const oldMat = mesh.material;
+  if (!oldMat) return;
+
+  // Get the base color/map from original material
+  let color = oldMat.color ? oldMat.color.clone() : new THREE.Color(0x888888);
+  let map = oldMat.map;
+
+  // Boost saturation of the color
+  const hsl = {};
+  color.getHSL(hsl);
+  hsl.s = Math.min(1, hsl.s * 1.3); // Boost saturation
+  hsl.l = Math.min(1, hsl.l * 1.1 + 0.05); // Slightly brighter
+  color.setHSL(hsl.h, hsl.s, hsl.l);
+
+  // Create toon-like material
+  const newMat = new THREE.MeshToonMaterial({
+    color: color,
+    map: map,
+    side: oldMat.side || THREE.FrontSide,
+  });
+
+  // Copy other properties
+  if (oldMat.transparent) newMat.transparent = true;
+  if (oldMat.opacity !== undefined) newMat.opacity = oldMat.opacity;
+  if (oldMat.alphaTest) newMat.alphaTest = oldMat.alphaTest;
+
+  mesh.material = newMat;
+
+  // Dispose old material
+  if (oldMat.dispose) oldMat.dispose();
+}
+
+// ═══ CARTOON SHADER ═══
+const ToonShader = {
+  uniforms: {
+    'tDiffuse': { value: null },
+    'levels': { value: 4.0 },
+    'saturation': { value: 1.4 },
+  },
+  vertexShader: `
+    varying vec2 vUv;
+    void main() {
+      vUv = uv;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+  `,
+  fragmentShader: `
+    uniform sampler2D tDiffuse;
+    uniform float levels;
+    uniform float saturation;
+    varying vec2 vUv;
+
+    vec3 rgb2hsv(vec3 c) {
+      vec4 K = vec4(0.0, -1.0/3.0, 2.0/3.0, -1.0);
+      vec4 p = mix(vec4(c.bg, K.wz), vec4(c.gb, K.xy), step(c.b, c.g));
+      vec4 q = mix(vec4(p.xyw, c.r), vec4(c.r, p.yzx), step(p.x, c.r));
+      float d = q.x - min(q.w, q.y);
+      float e = 1.0e-10;
+      return vec3(abs(q.z + (q.w - q.y) / (6.0 * d + e)), d / (q.x + e), q.x);
+    }
+
+    vec3 hsv2rgb(vec3 c) {
+      vec4 K = vec4(1.0, 2.0/3.0, 1.0/3.0, 3.0);
+      vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+      return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+    }
+
+    void main() {
+      vec4 color = texture2D(tDiffuse, vUv);
+
+      // Posterize (reduce color levels for cartoon look)
+      vec3 posterized = floor(color.rgb * levels + 0.5) / levels;
+
+      // Boost saturation for more vibrant colors
+      vec3 hsv = rgb2hsv(posterized);
+      hsv.y *= saturation;
+      vec3 saturated = hsv2rgb(hsv);
+
+      // Slight brightness boost
+      saturated = saturated * 1.1 + 0.02;
+
+      gl_FragColor = vec4(saturated, color.a);
+    }
+  `
+};
+
 // ═══ INIT THREE.JS ═══
 function initThree() {
   scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x87CEEB);
+  // Brighter, more cartoon-like sky
+  scene.background = new THREE.Color(0x88ddff);
 
   camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 1, 1e7);
 
@@ -149,20 +243,39 @@ function initThree() {
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
 
-  // Lighting
-  const ambient = new THREE.AmbientLight(0xffffff, 0.6);
+  // Brighter, flatter lighting for cartoon look
+  const ambient = new THREE.AmbientLight(0xffffff, 1.0);
   scene.add(ambient);
 
-  const sun = new THREE.DirectionalLight(0xffffff, 1.2);
-  sun.position.set(1, 1, 0.5).normalize().multiplyScalar(1e6);
+  const sun = new THREE.DirectionalLight(0xffffee, 1.5);
+  sun.position.set(1, 2, 0.5).normalize().multiplyScalar(1e6);
   scene.add(sun);
 
+  // Rim light for cartoon pop
+  const rim = new THREE.DirectionalLight(0x88ccff, 0.5);
+  rim.position.set(-1, 0.5, -1).normalize().multiplyScalar(1e6);
+  scene.add(rim);
+
   clock = new THREE.Clock();
+
+  // Post-processing for cartoon effect
+  composer = new EffectComposer(renderer);
+  composer.addPass(new RenderPass(scene, camera));
+
+  // Toon shader pass
+  const toonPass = new ShaderPass(ToonShader);
+  toonPass.uniforms['levels'].value = isMobile ? 5.0 : 4.0;
+  toonPass.uniforms['saturation'].value = 1.5;
+  composer.addPass(toonPass);
+
+  // Output pass
+  composer.addPass(new OutputPass());
 
   window.addEventListener('resize', () => {
     camera.aspect = innerWidth / innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(innerWidth, innerHeight);
+    composer.setSize(innerWidth, innerHeight);
   });
 }
 
@@ -202,6 +315,15 @@ async function setupTiles() {
     if (tileset.asset?.copyright) {
       document.getElementById('attribution').textContent = tileset.asset.copyright;
     }
+  };
+
+  // Cartoonify materials as tiles load
+  tilesRenderer.onLoadModel = (scene) => {
+    scene.traverse((child) => {
+      if (child.isMesh && child.material) {
+        cartoonifyMaterial(child);
+      }
+    });
   };
 
   // Add tiles to scene with rotation to convert ECEF to local ENU
@@ -1120,7 +1242,12 @@ function gameLoop() {
   // Update minimap
   drawMinimap();
 
-  renderer.render(scene, camera);
+  // Use composer for cartoon post-processing
+  if (composer) {
+    composer.render();
+  } else {
+    renderer.render(scene, camera);
+  }
 }
 
 function updatePlayer(dt) {
