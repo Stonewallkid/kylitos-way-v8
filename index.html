@@ -4,8 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1.0,user-scalable=no,maximum-scale=1.0">
   <title>Kylito's Way V8 - Google 3D</title>
-  <script type="module" crossorigin src="./assets/index-wdwGQE9K.js"></script>
-  <link rel="stylesheet" crossorigin href="./assets/index-DT-ch5cJ.css">
+  <script type="module" crossorigin src="./assets/index-CuyGXX_n.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-_gGOJxFJ.css">
 </head>
 <body>
   <div id="launch">
@@ -39,6 +39,8 @@
       <div class="key-row"><span class="key">E</span> Enter/Exit Car</div>
       <div class="key-row"><span class="key">J</span> Jetpack</div>
       <div class="key-row"><span class="key">P</span> Paintball</div>
+      <div class="key-row"><span class="key">M</span> Drop Marker</div>
+      <div class="key-row"><span class="key">C</span> Clear Markers</div>
       <div class="key-row"><span class="key">H</span> Hide/Show</div>
     </div>
     <div class="dh desktop-only"><span>H</span> toggle controls</div>
@@ -71,6 +73,14 @@
         <span class="mm-icon">🚗</span>
         <span class="mm-label">Enter/Exit Car</span>
       </div>
+      <div class="mobile-menu-item" id="mm-marker">
+        <span class="mm-icon">📍</span>
+        <span class="mm-label">Drop Marker</span>
+      </div>
+      <div class="mobile-menu-item" id="mm-clear-markers">
+        <span class="mm-icon">🗑️</span>
+        <span class="mm-label">Clear Markers</span>
+      </div>
     </div>
 
     <!-- Mobile touch controls -->
@@ -82,6 +92,13 @@
   </div>
 
   <div id="speedometer"><span id="spd-val">0</span> <span class="unit">MPH</span></div>
+
+  <!-- Mini Map -->
+  <div id="minimap-container">
+    <canvas id="minimap" width="150" height="150"></canvas>
+    <div id="minimap-north">N</div>
+    <div id="minimap-coords"></div>
+  </div>
   <div id="attribution"></div>
   <canvas id="gc"></canvas>
 
