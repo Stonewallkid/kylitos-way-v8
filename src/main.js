@@ -17,6 +17,8 @@ let mF = 0, mB = 0, mL = 0, mR = 0, sprinting = false;
 let yaw = 0, pitch = 0.4;
 let cLat, cLon, locName = '';
 let joyVec = { x: 0, y: 0 }, lookTID = null;
+let arrowLook = { left: 0, right: 0, up: 0, down: 0 }; // Arrow key look state
+let commandHeld = false; // For shooting with command key
 let vehicles = [], activeVehicle = null;
 let carAccelInput = 0, carBrakeInput = 0;
 let autoSprint = false; // Mobile auto-sprint toggle
@@ -36,6 +38,12 @@ const PAINT_SPEED = 50;
 const PAINT_GRAVITY = -15;
 const MAX_SPLATS = 300;
 
+// Zombies
+let zombies = [];
+const ZOMBIE_COUNT = 15;
+const ZOMBIE_SPEED = 2.5;
+const ZOMBIE_WANDER_RANGE = 80;
+
 // Mini map
 let spawnPoint = { x: 0, z: 0 };
 let mapMarkers = [];
@@ -48,6 +56,7 @@ let localEast = null, localNorth = null, localUp = null;
 
 // Constants
 const P_SPD = 8, SPRINT = 2.2, JUMP = 12, GRAV = -30, MSENS = 0.003;
+const ARROW_LOOK_SPEED = 2.5; // Radians per second for arrow key looking
 const CAM_DIST = 6, CAM_HEIGHT = 2.5;
 const CAR_ACCEL = 15, CAR_BRAKE = 20, CAR_MAX = 28, CAR_STEER = 2, CAR_FRICTION = 5;
 
@@ -445,6 +454,207 @@ function createJetpackMesh() {
   jetpackMesh = g;
 }
 
+// ═══ ZOMBIE SYSTEM ═══
+function createZombie(localX, localZ) {
+  const group = new THREE.Group();
+
+  // Zombie colors - sickly green/gray
+  const zombieSkin = new THREE.MeshStandardMaterial({ color: 0x5a7a5a, roughness: 0.9 });
+  const zombieClothes = new THREE.MeshStandardMaterial({ color: 0x3a3a3a, roughness: 0.95 });
+  const zombieRed = new THREE.MeshStandardMaterial({ color: 0x880000, roughness: 0.8 });
+
+  // Leg pivots (for shambling animation)
+  const leftLegPivot = new THREE.Group();
+  leftLegPivot.position.set(-0.12, 0.55, 0);
+  group.add(leftLegPivot);
+
+  const rightLegPivot = new THREE.Group();
+  rightLegPivot.position.set(0.12, 0.55, 0);
+  group.add(rightLegPivot);
+
+  // Legs
+  const legGeo = new THREE.CapsuleGeometry(0.09, 0.42, 4, 8);
+  const leftLeg = new THREE.Mesh(legGeo, zombieClothes);
+  leftLeg.position.y = -0.22;
+  leftLegPivot.add(leftLeg);
+  const rightLeg = new THREE.Mesh(legGeo, zombieClothes);
+  rightLeg.position.y = -0.22;
+  rightLegPivot.add(rightLeg);
+
+  // Torso (hunched)
+  const torsoGeo = new THREE.CapsuleGeometry(0.17, 0.38, 4, 8);
+  const torso = new THREE.Mesh(torsoGeo, zombieClothes);
+  torso.position.y = 0.88;
+  torso.rotation.x = 0.2; // Hunched forward
+  group.add(torso);
+
+  // Arm pivots (reaching forward)
+  const leftArmPivot = new THREE.Group();
+  leftArmPivot.position.set(-0.25, 1.0, 0);
+  leftArmPivot.rotation.x = -0.8; // Arms reaching forward
+  group.add(leftArmPivot);
+
+  const rightArmPivot = new THREE.Group();
+  rightArmPivot.position.set(0.25, 1.0, 0);
+  rightArmPivot.rotation.x = -0.6;
+  group.add(rightArmPivot);
+
+  // Arms
+  const armGeo = new THREE.CapsuleGeometry(0.055, 0.32, 4, 8);
+  const leftArm = new THREE.Mesh(armGeo, zombieSkin);
+  leftArm.position.y = -0.18;
+  leftArmPivot.add(leftArm);
+  const rightArm = new THREE.Mesh(armGeo, zombieSkin);
+  rightArm.position.y = -0.18;
+  rightArmPivot.add(rightArm);
+
+  // Head
+  const headGeo = new THREE.SphereGeometry(0.14, 12, 12);
+  const head = new THREE.Mesh(headGeo, zombieSkin);
+  head.position.y = 1.2;
+  head.position.z = 0.1; // Forward (hunched)
+  group.add(head);
+
+  // Glowing red eyes
+  const eyeGeo = new THREE.SphereGeometry(0.02, 8, 8);
+  const eyeMat = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+  const leftEye = new THREE.Mesh(eyeGeo, eyeMat);
+  leftEye.position.set(-0.045, 1.22, 0.22);
+  group.add(leftEye);
+  const rightEye = leftEye.clone();
+  rightEye.position.x = 0.045;
+  group.add(rightEye);
+
+  // Store animation refs
+  group.userData.leftLegPivot = leftLegPivot;
+  group.userData.rightLegPivot = rightLegPivot;
+  group.userData.leftArmPivot = leftArmPivot;
+  group.userData.rightArmPivot = rightArmPivot;
+  group.userData.animTime = Math.random() * Math.PI * 2;
+
+  // Zombie AI state
+  group.userData.localPos = new THREE.Vector3(localX, 2, localZ);
+  group.userData.health = 3; // Takes 3 paintball hits to kill
+  group.userData.wanderTarget = new THREE.Vector3(localX, 0, localZ);
+  group.userData.wanderTimer = 0;
+  group.userData.dead = false;
+  group.userData.respawnTimer = 0;
+
+  scene.add(group);
+  return group;
+}
+
+function spawnZombies() {
+  for (let i = 0; i < ZOMBIE_COUNT; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const dist = 20 + Math.random() * ZOMBIE_WANDER_RANGE;
+    const zombie = createZombie(Math.cos(angle) * dist, Math.sin(angle) * dist);
+    zombies.push(zombie);
+  }
+}
+
+function updateZombies(dt) {
+  for (const z of zombies) {
+    if (z.userData.dead) {
+      z.userData.respawnTimer -= dt;
+      if (z.userData.respawnTimer <= 0) {
+        // Respawn zombie at random location
+        const angle = Math.random() * Math.PI * 2;
+        const dist = 30 + Math.random() * ZOMBIE_WANDER_RANGE;
+        z.userData.localPos.set(Math.cos(angle) * dist, 2, Math.sin(angle) * dist);
+        z.userData.health = 3;
+        z.userData.dead = false;
+        z.visible = true;
+      }
+      continue;
+    }
+
+    // Wander AI - pick new target periodically
+    z.userData.wanderTimer -= dt;
+    if (z.userData.wanderTimer <= 0) {
+      z.userData.wanderTimer = 3 + Math.random() * 4;
+      // Pick random point near current position
+      const angle = Math.random() * Math.PI * 2;
+      const dist = 5 + Math.random() * 15;
+      z.userData.wanderTarget.set(
+        z.userData.localPos.x + Math.cos(angle) * dist,
+        0,
+        z.userData.localPos.z + Math.sin(angle) * dist
+      );
+    }
+
+    // Move toward target
+    const dx = z.userData.wanderTarget.x - z.userData.localPos.x;
+    const dz = z.userData.wanderTarget.z - z.userData.localPos.z;
+    const dist = Math.sqrt(dx * dx + dz * dz);
+
+    if (dist > 1) {
+      const moveX = (dx / dist) * ZOMBIE_SPEED * dt;
+      const moveZ = (dz / dist) * ZOMBIE_SPEED * dt;
+      z.userData.localPos.x += moveX;
+      z.userData.localPos.z += moveZ;
+
+      // Face movement direction
+      z.rotation.y = Math.atan2(dx, dz);
+    }
+
+    // Ground height
+    const groundY = getGroundHeight(z.userData.localPos.x, z.userData.localPos.z);
+    z.userData.localPos.y = groundY + 0.1;
+
+    // Update 3D position
+    z.position.copy(z.userData.localPos);
+
+    // Shambling animation
+    z.userData.animTime += dt * 4;
+    const shamble = Math.sin(z.userData.animTime) * 0.4;
+    z.userData.leftLegPivot.rotation.x = shamble;
+    z.userData.rightLegPivot.rotation.x = -shamble;
+    z.userData.leftArmPivot.rotation.x = -0.8 + shamble * 0.2;
+    z.userData.rightArmPivot.rotation.x = -0.6 - shamble * 0.2;
+  }
+}
+
+function checkZombieHits(paintball) {
+  for (const z of zombies) {
+    if (z.userData.dead) continue;
+
+    const dist = paintball.position.distanceTo(z.position);
+    if (dist < 1.2) {
+      z.userData.health--;
+
+      // Create hit effect (green splat on zombie)
+      createSplat(paintball.position.clone(), new THREE.Vector3(0, 1, 0), paintball.userData.color);
+
+      if (z.userData.health <= 0) {
+        // Zombie dies!
+        z.userData.dead = true;
+        z.userData.respawnTimer = 8 + Math.random() * 5; // Respawn in 8-13 seconds
+        z.visible = false;
+
+        // Show kill notification
+        showKillNotification();
+      }
+
+      return true; // Hit detected
+    }
+  }
+  return false;
+}
+
+function showKillNotification() {
+  let notif = document.getElementById('kill-notif');
+  if (!notif) {
+    notif = document.createElement('div');
+    notif.id = 'kill-notif';
+    notif.style.cssText = 'position:fixed;top:30%;left:50%;transform:translateX(-50%);font-family:Orbitron,sans-serif;font-size:24px;color:#ff0000;text-shadow:0 0 10px #ff0000;z-index:100;opacity:0;transition:opacity 0.3s;pointer-events:none;';
+    document.body.appendChild(notif);
+  }
+  notif.textContent = 'ZOMBIE KILLED!';
+  notif.style.opacity = '1';
+  setTimeout(() => { notif.style.opacity = '0'; }, 1500);
+}
+
 // ═══ PAINTBALL FUNCTIONS ═══
 function togglePaintball() {
   paintMode = !paintMode;
@@ -543,6 +753,13 @@ function updatePaintballs(dt) {
     b.userData.vel.y += PAINT_GRAVITY * dt;
     b.position.addScaledVector(b.userData.vel, dt);
     b.userData.life -= dt;
+
+    // Check zombie hits first
+    if (checkZombieHits(b)) {
+      scene.remove(b);
+      paintBalls.splice(i, 1);
+      continue;
+    }
 
     // Check collision with tiles
     if (tilesRenderer) {
@@ -680,6 +897,22 @@ function drawMinimap() {
     }
   });
 
+  // Draw zombies (red dots)
+  zombies.forEach(z => {
+    if (z.userData.dead) return;
+    const dx = (z.userData.localPos.x - playerPos.x) / MINIMAP_SCALE;
+    const dz = (z.userData.localPos.z - playerPos.z) / MINIMAP_SCALE;
+    const rx = dx * Math.cos(-yaw) - dz * Math.sin(-yaw);
+    const rz = dx * Math.sin(-yaw) + dz * Math.cos(-yaw);
+
+    if (Math.abs(rx) < cx && Math.abs(rz) < cy) {
+      minimapCtx.fillStyle = '#ff0000';
+      minimapCtx.beginPath();
+      minimapCtx.arc(cx + rx, cy - rz, 3, 0, Math.PI * 2);
+      minimapCtx.fill();
+    }
+  });
+
   // Draw player (always center, pointing up)
   minimapCtx.fillStyle = '#00ff88';
   minimapCtx.beginPath();
@@ -813,25 +1046,41 @@ function setupControls() {
       return;
     }
     switch (e.code) {
-      case 'KeyW': case 'ArrowUp': mF = 1; break;
-      case 'KeyS': case 'ArrowDown': mB = 1; break;
-      case 'KeyA': case 'ArrowLeft': mL = 1; break;
-      case 'KeyD': case 'ArrowRight': mR = 1; break;
+      // WASD for movement
+      case 'KeyW': mF = 1; break;
+      case 'KeyS': mB = 1; break;
+      case 'KeyA': mL = 1; break;
+      case 'KeyD': mR = 1; break;
+      // Arrow keys for looking
+      case 'ArrowUp': arrowLook.up = 1; break;
+      case 'ArrowDown': arrowLook.down = 1; break;
+      case 'ArrowLeft': arrowLook.left = 1; break;
+      case 'ArrowRight': arrowLook.right = 1; break;
       case 'ShiftLeft': case 'ShiftRight': sprinting = true; break;
       case 'Space':
         e.preventDefault();
         if (!activeVehicle && onGround) { velY = JUMP; onGround = false; }
+        break;
+      // Command key for shooting (Meta on Mac)
+      case 'MetaLeft': case 'MetaRight':
+        e.preventDefault();
+        commandHeld = true;
         break;
     }
   });
 
   document.addEventListener('keyup', e => {
     switch (e.code) {
-      case 'KeyW': case 'ArrowUp': mF = 0; break;
-      case 'KeyS': case 'ArrowDown': mB = 0; break;
-      case 'KeyA': case 'ArrowLeft': mL = 0; break;
-      case 'KeyD': case 'ArrowRight': mR = 0; break;
+      case 'KeyW': mF = 0; break;
+      case 'KeyS': mB = 0; break;
+      case 'KeyA': mL = 0; break;
+      case 'KeyD': mR = 0; break;
+      case 'ArrowUp': arrowLook.up = 0; break;
+      case 'ArrowDown': arrowLook.down = 0; break;
+      case 'ArrowLeft': arrowLook.left = 0; break;
+      case 'ArrowRight': arrowLook.right = 0; break;
       case 'ShiftLeft': case 'ShiftRight': sprinting = false; break;
+      case 'MetaLeft': case 'MetaRight': commandHeld = false; break;
     }
   });
 
@@ -1090,6 +1339,9 @@ function exitVehicle() {
 }
 
 // ═══ GAME LOOP ═══
+let lastShotTime = 0;
+const SHOT_COOLDOWN = 0.15; // Seconds between shots when holding command
+
 function gameLoop() {
   requestAnimationFrame(gameLoop);
   const dt = Math.min(clock.getDelta(), 0.1);
@@ -1099,6 +1351,24 @@ function gameLoop() {
     tilesRenderer.setCamera(camera);
     tilesRenderer.setResolutionFromRenderer(camera, renderer);
     tilesRenderer.update();
+  }
+
+  // Arrow key looking (independent of movement)
+  const lookX = arrowLook.right - arrowLook.left;
+  const lookY = arrowLook.down - arrowLook.up;
+  if (lookX !== 0 || lookY !== 0) {
+    yaw -= lookX * ARROW_LOOK_SPEED * dt;
+    pitch += lookY * ARROW_LOOK_SPEED * dt * 0.5;
+    pitch = Math.max(0.1, Math.min(1.4, pitch));
+  }
+
+  // Command key shooting (auto-fire when held in paintball mode)
+  if (commandHeld && paintMode && !activeVehicle) {
+    lastShotTime += dt;
+    if (lastShotTime >= SHOT_COOLDOWN) {
+      shootPaintball();
+      lastShotTime = 0;
+    }
   }
 
   // Update player or vehicle
@@ -1113,6 +1383,9 @@ function gameLoop() {
 
   // Update camera
   updateCamera();
+
+  // Update zombies
+  updateZombies(dt);
 
   // Update paintballs
   if (paintMode) updatePaintballs(dt);
@@ -1178,17 +1451,16 @@ function updatePlayer(dt) {
   // Update jetpack HUD
   updateJetpackHUD();
 
-  // Auto-rotate camera to follow movement direction
+  // Player model rotates to face movement direction (camera controlled by arrows)
   const isMoving = Math.abs(moveZ) > 0.1 || Math.abs(moveX) > 0.1;
   if (isMoving) {
     const moveAngle = Math.atan2(dx, dz);
-    // Smoothly rotate yaw to follow movement
-    let targetYaw = moveAngle;
-    let yawDiff = targetYaw - yaw;
-    // Normalize to -PI to PI
-    while (yawDiff > Math.PI) yawDiff -= Math.PI * 2;
-    while (yawDiff < -Math.PI) yawDiff += Math.PI * 2;
-    yaw += yawDiff * 0.075; // Smooth follow
+    // Smoothly rotate player model to face movement direction
+    player.userData.facingYaw = player.userData.facingYaw || yaw;
+    let facingDiff = moveAngle - player.userData.facingYaw;
+    while (facingDiff > Math.PI) facingDiff -= Math.PI * 2;
+    while (facingDiff < -Math.PI) facingDiff += Math.PI * 2;
+    player.userData.facingYaw += facingDiff * 0.15;
   }
 
   // Running animation
@@ -1254,7 +1526,8 @@ function updateWorldPositions() {
   // Update player position - now simple since tiles are in local coords
   if (player && player.visible) {
     player.position.copy(player.userData.localPos);
-    player.rotation.y = yaw;
+    // Player model faces movement direction, not camera direction
+    player.rotation.y = player.userData.facingYaw || yaw;
   }
 
   // Update vehicles
@@ -1305,13 +1578,16 @@ async function startGame() {
     spawnPoint = { x: 0, z: 0 };
     initMinimap();
 
-    // Spawn cars nearby
-    for (let i = 0; i < 5; i++) {
-      const angle = (i / 5) * Math.PI * 2;
-      const dist = 15 + Math.random() * 15;
+    // Spawn cars nearby (post-apocalyptic abandoned cars)
+    for (let i = 0; i < 8; i++) {
+      const angle = (i / 8) * Math.PI * 2 + Math.random() * 0.5;
+      const dist = 10 + Math.random() * 25;
       const car = createVehicle(Math.cos(angle) * dist, Math.sin(angle) * dist);
       vehicles.push(car);
     }
+
+    // Spawn zombies!
+    spawnZombies();
 
     setupControls();
 
