@@ -617,6 +617,11 @@ function setupControls() {
       togglePaintball();
       return;
     }
+    if (e.code === 'KeyH') {
+      const controls = document.getElementById('controls-key');
+      if (controls) controls.classList.toggle('hidden');
+      return;
+    }
     switch (e.code) {
       case 'KeyW': case 'ArrowUp': mF = 1; break;
       case 'KeyS': case 'ArrowDown': mB = 1; break;
