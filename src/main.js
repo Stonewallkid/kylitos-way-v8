@@ -48,7 +48,8 @@ const ZOMBIE_WANDER_RANGE = 80;
 let spawnPoint = { x: 0, z: 0 };
 let mapMarkers = [];
 let minimapCtx = null;
-const MINIMAP_SCALE = 3; // meters per pixel
+let minimapImage = null;
+const MINIMAP_SCALE = 2; // meters per pixel (smaller = more zoomed in)
 
 // World origin for local coordinate system
 let worldOriginECEF = null;
@@ -816,7 +817,19 @@ function initMinimap() {
   const canvas = document.getElementById('minimap');
   if (canvas) {
     minimapCtx = canvas.getContext('2d');
+    loadMinimapImage();
   }
+}
+
+function loadMinimapImage() {
+  // Load Google Maps Static image for the minimap background
+  const size = 300; // Higher res for quality
+  const zoom = 18; // Street level zoom
+  const mapUrl = `https://maps.googleapis.com/maps/api/staticmap?center=${cLat},${cLon}&zoom=${zoom}&size=${size}x${size}&maptype=roadmap&style=feature:all|element:labels|visibility:off&style=feature:road|element:geometry|color:0x444444&style=feature:landscape|element:geometry|color:0x222222&style=feature:water|element:geometry|color:0x111133&style=feature:poi|visibility:off&key=${GOOGLE_API_KEY}`;
+
+  minimapImage = new Image();
+  minimapImage.crossOrigin = 'anonymous';
+  minimapImage.src = mapUrl;
 }
 
 function drawMinimap() {
@@ -827,37 +840,58 @@ function drawMinimap() {
   const cy = canvas.height / 2;
   const playerPos = player.userData.localPos;
 
-  // Clear with dark background
-  minimapCtx.fillStyle = 'rgba(10, 15, 20, 0.9)';
-  minimapCtx.beginPath();
-  minimapCtx.arc(cx, cy, cx, 0, Math.PI * 2);
-  minimapCtx.fill();
+  // Clear canvas
+  minimapCtx.clearRect(0, 0, canvas.width, canvas.height);
 
-  // Draw grid
-  minimapCtx.strokeStyle = 'rgba(0, 255, 170, 0.1)';
-  minimapCtx.lineWidth = 1;
-  for (let i = -5; i <= 5; i++) {
-    const offset = i * 20;
-    minimapCtx.beginPath();
-    minimapCtx.moveTo(cx + offset, 0);
-    minimapCtx.lineTo(cx + offset, canvas.height);
-    minimapCtx.stroke();
-    minimapCtx.beginPath();
-    minimapCtx.moveTo(0, cy + offset);
-    minimapCtx.lineTo(canvas.width, cy + offset);
-    minimapCtx.stroke();
+  // Draw circular clip path
+  minimapCtx.save();
+  minimapCtx.beginPath();
+  minimapCtx.arc(cx, cy, cx - 2, 0, Math.PI * 2);
+  minimapCtx.clip();
+
+  // Draw map background image if loaded
+  if (minimapImage && minimapImage.complete) {
+    // The image is centered on spawn point, so we need to offset based on player position
+    // Each pixel in the static map is approximately 0.5m at zoom 18
+    const pixelsPerMeter = 2; // At zoom 18
+    const offsetX = -playerPos.x * pixelsPerMeter;
+    const offsetZ = playerPos.z * pixelsPerMeter; // Flip Z because map Y is inverted
+
+    minimapCtx.drawImage(
+      minimapImage,
+      cx - minimapImage.width / 2 + offsetX,
+      cy - minimapImage.height / 2 + offsetZ,
+      minimapImage.width,
+      minimapImage.height
+    );
+  } else {
+    // Fallback dark background with grid
+    minimapCtx.fillStyle = 'rgba(10, 15, 20, 0.95)';
+    minimapCtx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Draw grid
+    minimapCtx.strokeStyle = 'rgba(0, 255, 170, 0.15)';
+    minimapCtx.lineWidth = 1;
+    for (let i = -5; i <= 5; i++) {
+      const offset = i * 20;
+      minimapCtx.beginPath();
+      minimapCtx.moveTo(cx + offset, 0);
+      minimapCtx.lineTo(cx + offset, canvas.height);
+      minimapCtx.stroke();
+      minimapCtx.beginPath();
+      minimapCtx.moveTo(0, cy + offset);
+      minimapCtx.lineTo(canvas.width, cy + offset);
+      minimapCtx.stroke();
+    }
   }
 
-  // Draw spawn point (yellow star)
+  // Draw spawn point (yellow star) - NORTH IS UP, no rotation
   const spawnDx = (spawnPoint.x - playerPos.x) / MINIMAP_SCALE;
   const spawnDz = (spawnPoint.z - playerPos.z) / MINIMAP_SCALE;
-  // Rotate to account for player yaw (map rotates with player)
-  const spawnRx = spawnDx * Math.cos(-yaw) - spawnDz * Math.sin(-yaw);
-  const spawnRz = spawnDx * Math.sin(-yaw) + spawnDz * Math.cos(-yaw);
-  const spawnMapX = cx + spawnRx;
-  const spawnMapY = cy - spawnRz;
+  const spawnMapX = cx + spawnDx;
+  const spawnMapY = cy - spawnDz; // Negative because +Z is forward but map Y goes down
 
-  if (Math.abs(spawnRx) < cx && Math.abs(spawnRz) < cy) {
+  if (Math.abs(spawnDx) < cx && Math.abs(spawnDz) < cy) {
     minimapCtx.fillStyle = '#ffcc00';
     minimapCtx.beginPath();
     drawStar(minimapCtx, spawnMapX, spawnMapY, 5, 6, 3);
@@ -868,19 +902,16 @@ function drawMinimap() {
   mapMarkers.forEach((marker, i) => {
     const dx = (marker.x - playerPos.x) / MINIMAP_SCALE;
     const dz = (marker.z - playerPos.z) / MINIMAP_SCALE;
-    const rx = dx * Math.cos(-yaw) - dz * Math.sin(-yaw);
-    const rz = dx * Math.sin(-yaw) + dz * Math.cos(-yaw);
 
-    if (Math.abs(rx) < cx && Math.abs(rz) < cy) {
+    if (Math.abs(dx) < cx && Math.abs(dz) < cy) {
       minimapCtx.fillStyle = marker.color || '#ff66aa';
       minimapCtx.beginPath();
-      minimapCtx.arc(cx + rx, cy - rz, 4, 0, Math.PI * 2);
+      minimapCtx.arc(cx + dx, cy - dz, 4, 0, Math.PI * 2);
       minimapCtx.fill();
-      // Number label
       minimapCtx.fillStyle = '#fff';
       minimapCtx.font = '8px Orbitron';
       minimapCtx.textAlign = 'center';
-      minimapCtx.fillText(i + 1, cx + rx, cy - rz + 3);
+      minimapCtx.fillText(i + 1, cx + dx, cy - dz + 3);
     }
   });
 
@@ -888,12 +919,10 @@ function drawMinimap() {
   vehicles.forEach(v => {
     const dx = (v.userData.localPos.x - playerPos.x) / MINIMAP_SCALE;
     const dz = (v.userData.localPos.z - playerPos.z) / MINIMAP_SCALE;
-    const rx = dx * Math.cos(-yaw) - dz * Math.sin(-yaw);
-    const rz = dx * Math.sin(-yaw) + dz * Math.cos(-yaw);
 
-    if (Math.abs(rx) < cx && Math.abs(rz) < cy) {
+    if (Math.abs(dx) < cx && Math.abs(dz) < cy) {
       minimapCtx.fillStyle = v === activeVehicle ? '#00ffaa' : '#4488ff';
-      minimapCtx.fillRect(cx + rx - 3, cy - rz - 2, 6, 4);
+      minimapCtx.fillRect(cx + dx - 3, cy - dz - 2, 6, 4);
     }
   });
 
@@ -902,41 +931,39 @@ function drawMinimap() {
     if (z.userData.dead) return;
     const dx = (z.userData.localPos.x - playerPos.x) / MINIMAP_SCALE;
     const dz = (z.userData.localPos.z - playerPos.z) / MINIMAP_SCALE;
-    const rx = dx * Math.cos(-yaw) - dz * Math.sin(-yaw);
-    const rz = dx * Math.sin(-yaw) + dz * Math.cos(-yaw);
 
-    if (Math.abs(rx) < cx && Math.abs(rz) < cy) {
+    if (Math.abs(dx) < cx && Math.abs(dz) < cy) {
       minimapCtx.fillStyle = '#ff0000';
       minimapCtx.beginPath();
-      minimapCtx.arc(cx + rx, cy - rz, 3, 0, Math.PI * 2);
+      minimapCtx.arc(cx + dx, cy - dz, 3, 0, Math.PI * 2);
       minimapCtx.fill();
     }
   });
 
-  // Draw player (always center, pointing up)
+  // Draw player (center, ROTATES to show facing direction)
+  minimapCtx.save();
+  minimapCtx.translate(cx, cy);
+  // Get player facing direction (use facingYaw if moving, otherwise camera yaw)
+  const playerFacing = player.userData.facingYaw || yaw;
+  minimapCtx.rotate(-playerFacing); // Negative because canvas rotation is clockwise
+
   minimapCtx.fillStyle = '#00ff88';
   minimapCtx.beginPath();
-  minimapCtx.moveTo(cx, cy - 8);
-  minimapCtx.lineTo(cx - 5, cy + 5);
-  minimapCtx.lineTo(cx + 5, cy + 5);
+  minimapCtx.moveTo(0, -8);  // Point forward
+  minimapCtx.lineTo(-5, 5);
+  minimapCtx.lineTo(5, 5);
   minimapCtx.closePath();
   minimapCtx.fill();
+  minimapCtx.restore();
 
-  // Draw compass ring
-  minimapCtx.strokeStyle = 'rgba(0, 255, 170, 0.3)';
+  minimapCtx.restore(); // Restore from clip
+
+  // Draw compass ring (outside clip)
+  minimapCtx.strokeStyle = 'rgba(0, 255, 170, 0.4)';
   minimapCtx.lineWidth = 2;
   minimapCtx.beginPath();
   minimapCtx.arc(cx, cy, cx - 2, 0, Math.PI * 2);
   minimapCtx.stroke();
-
-  // North indicator on ring (rotates with player)
-  const northAngle = -yaw - Math.PI / 2;
-  const northX = cx + Math.cos(northAngle) * (cx - 8);
-  const northY = cy + Math.sin(northAngle) * (cy - 8);
-  minimapCtx.fillStyle = '#ff4444';
-  minimapCtx.beginPath();
-  minimapCtx.arc(northX, northY, 4, 0, Math.PI * 2);
-  minimapCtx.fill();
 
   // Update coords display
   const coordsEl = document.getElementById('minimap-coords');
