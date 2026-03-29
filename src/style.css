@@ -341,7 +341,166 @@ button, input { font-family: inherit; }
 .abtn.yl { border-color: rgba(255,200,0,.25); color: rgba(255,200,0,.7); background: rgba(255,200,0,.06); }
 .abtn.rd { border-color: rgba(255,60,60,.25); color: rgba(255,60,60,.7); background: rgba(255,60,60,.06); }
 
+/* Desktop only elements */
+.desktop-only { display: block; }
+.mobile-only { display: none; }
+
 @media (max-width: 768px) {
   .tc { display: block; }
-  .dh { display: none; }
+  .desktop-only { display: none !important; }
+  .mobile-only { display: block; }
+}
+
+/* Mobile menu button */
+#mobile-menu-btn {
+  position: fixed;
+  top: 10px;
+  right: 10px;
+  width: 44px;
+  height: 44px;
+  background: rgba(0,0,0,0.7);
+  border: 1px solid rgba(0,255,170,0.3);
+  border-radius: 8px;
+  color: rgba(0,255,170,0.8);
+  font-size: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: auto;
+  z-index: 80;
+  cursor: pointer;
+}
+
+/* Mobile menu panel */
+#mobile-menu {
+  position: fixed;
+  top: 60px;
+  right: 10px;
+  width: 200px;
+  background: rgba(0,0,0,0.9);
+  border: 1px solid rgba(0,255,170,0.3);
+  border-radius: 10px;
+  padding: 0;
+  pointer-events: auto;
+  z-index: 85;
+  overflow: hidden;
+}
+
+#mobile-menu.hidden {
+  display: none !important;
+}
+
+.mobile-menu-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 15px;
+  background: rgba(0,255,170,0.1);
+  border-bottom: 1px solid rgba(0,255,170,0.2);
+  font-family: 'Orbitron', sans-serif;
+  font-size: 12px;
+  font-weight: 700;
+  color: rgba(0,255,170,0.8);
+  letter-spacing: 0.1em;
+}
+
+#mobile-menu-close {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255,100,100,0.2);
+  border-radius: 50%;
+  color: rgba(255,100,100,0.8);
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.mobile-menu-item {
+  display: flex;
+  align-items: center;
+  padding: 14px 15px;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+  color: rgba(255,255,255,0.8);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.mobile-menu-item:active {
+  background: rgba(0,255,170,0.15);
+}
+
+.mm-icon {
+  width: 28px;
+  font-size: 18px;
+}
+
+.mm-label {
+  flex: 1;
+}
+
+.mm-status {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 10px;
+  background: rgba(255,255,255,0.1);
+  color: rgba(255,255,255,0.5);
+}
+
+.mm-status.on {
+  background: rgba(0,255,170,0.2);
+  color: rgba(0,255,170,0.9);
+}
+
+/* Improved mobile touch zones */
+.jz {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  width: 40%;
+  height: 50%;
+  pointer-events: auto;
+  z-index: 60;
+}
+
+.lz {
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: auto;
+  z-index: 55;
+}
+
+/* Action buttons for mobile */
+.ab {
+  position: fixed;
+  bottom: 20px;
+  right: 15px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  pointer-events: auto;
+  z-index: 65;
+}
+
+.abtn {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'Orbitron', sans-serif;
+  font-weight: 700;
+  font-size: 11px;
+  color: rgba(0,255,170,0.9);
+  border: 2px solid rgba(0,255,170,0.4);
+  background: rgba(0,20,15,0.8);
+  text-align: center;
+  line-height: 1.1;
 }

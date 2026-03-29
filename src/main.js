@@ -19,6 +19,7 @@ let cLat, cLon, locName = '';
 let joyVec = { x: 0, y: 0 }, lookTID = null;
 let vehicles = [], activeVehicle = null;
 let carAccelInput = 0, carBrakeInput = 0;
+let autoSprint = false; // Mobile auto-sprint toggle
 
 // Jetpack
 let jetpackActive = false;
@@ -706,6 +707,51 @@ function setupControls() {
 function setupMobile() {
   document.getElementById('touch-controls').style.display = 'block';
 
+  // Mobile menu handlers
+  const menuBtn = document.getElementById('mobile-menu-btn');
+  const menu = document.getElementById('mobile-menu');
+  const menuClose = document.getElementById('mobile-menu-close');
+
+  if (menuBtn) {
+    menuBtn.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      menu.classList.toggle('hidden');
+    });
+  }
+
+  if (menuClose) {
+    menuClose.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      menu.classList.add('hidden');
+    });
+  }
+
+  // Menu item handlers
+  document.getElementById('mm-jetpack')?.addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    jetpackActive = !jetpackActive;
+    updateMobileMenuStatus();
+  });
+
+  document.getElementById('mm-paintball')?.addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    togglePaintball();
+    updateMobileMenuStatus();
+  });
+
+  document.getElementById('mm-sprint')?.addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    autoSprint = !autoSprint;
+    updateMobileMenuStatus();
+  });
+
+  document.getElementById('mm-car')?.addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    if (activeVehicle) exitVehicle();
+    else enterNearestVehicle();
+    menu.classList.add('hidden');
+  });
+
   const jz = document.getElementById('jz');
   const jk = document.getElementById('jk');
   let jTID = null, jC = { x: 0, y: 0 };
@@ -801,12 +847,41 @@ function updateMobileButtons() {
     document.getElementById('mb-brake').addEventListener('touchend', () => { carBrakeInput = 0; });
     document.getElementById('mb-exit').addEventListener('touchstart', e => { e.preventDefault(); exitVehicle(); }, { passive: false });
   } else {
-    ab.innerHTML = '<div class="abtn" id="mb-jump">JMP</div>';
-    document.getElementById('mb-jump').addEventListener('touchstart', e => {
+    ab.innerHTML = `
+      <div class="abtn" id="mb-jump">JUMP</div>
+      ${paintMode ? '<div class="abtn yl" id="mb-shoot">FIRE</div>' : ''}
+    `;
+    document.getElementById('mb-jump')?.addEventListener('touchstart', e => {
       e.preventDefault();
       if (onGround) { velY = JUMP; onGround = false; }
     }, { passive: false });
+    document.getElementById('mb-shoot')?.addEventListener('touchstart', e => {
+      e.preventDefault();
+      shootPaintball();
+    }, { passive: false });
   }
+}
+
+function updateMobileMenuStatus() {
+  const jetpackStatus = document.getElementById('mm-jetpack-status');
+  const paintballStatus = document.getElementById('mm-paintball-status');
+  const sprintStatus = document.getElementById('mm-sprint-status');
+
+  if (jetpackStatus) {
+    jetpackStatus.textContent = jetpackActive ? 'ON' : 'OFF';
+    jetpackStatus.classList.toggle('on', jetpackActive);
+  }
+  if (paintballStatus) {
+    paintballStatus.textContent = paintMode ? 'ON' : 'OFF';
+    paintballStatus.classList.toggle('on', paintMode);
+  }
+  if (sprintStatus) {
+    sprintStatus.textContent = autoSprint ? 'ON' : 'OFF';
+    sprintStatus.classList.toggle('on', autoSprint);
+  }
+
+  // Update action buttons when paintball changes
+  if (isMobile && !activeVehicle) updateMobileButtons();
 }
 
 // ═══ VEHICLE ENTER/EXIT ═══
@@ -877,7 +952,7 @@ function updatePlayer(dt) {
   if (Math.abs(joyVec.x) > 0.1) moveX = joyVec.x;
   if (Math.abs(joyVec.y) > 0.1) moveZ = -joyVec.y;
 
-  const speed = P_SPD * (sprinting ? SPRINT : 1);
+  const speed = P_SPD * ((sprinting || autoSprint) ? SPRINT : 1);
 
   // Movement relative to camera/yaw direction
   // Forward is -Z in Three.js (toward where camera looks)
@@ -888,7 +963,7 @@ function updatePlayer(dt) {
   player.userData.localPos.z += dz;
 
   // Jetpack physics
-  if (jetpackActive && jetpackFuel > 0 && sprinting) {
+  if (jetpackActive && jetpackFuel > 0 && (sprinting || autoSprint)) {
     velY = 12; // Upward thrust
     jetpackFuel -= dt;
     if (jetpackFuel < 0) jetpackFuel = 0;
@@ -940,7 +1015,7 @@ function updatePlayer(dt) {
   // Running animation
   const moveSpeed = Math.sqrt(dx * dx + dz * dz) / dt;
   if (isMoving && onGround && moveSpeed > 0.5) {
-    const animSpeed = sprinting ? 18 : 12;
+    const animSpeed = (sprinting || autoSprint) ? 18 : 12;
     player.userData.animTime += dt * animSpeed;
     const swing = Math.sin(player.userData.animTime) * 0.6;
 

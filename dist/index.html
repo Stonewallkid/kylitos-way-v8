@@ -4,8 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1.0,user-scalable=no,maximum-scale=1.0">
   <title>Kylito's Way V8 - Google 3D</title>
-  <script type="module" crossorigin src="./assets/index-DmGzemOf.js"></script>
-  <link rel="stylesheet" crossorigin href="./assets/index-DAdfJso-.css">
+  <script type="module" crossorigin src="./assets/index-wdwGQE9K.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-DT-ch5cJ.css">
 </head>
 <body>
   <div id="launch">
@@ -28,7 +28,9 @@
 
   <div id="hud">
     <div class="hl"><div id="hn">—</div></div>
-    <div id="controls-key">
+
+    <!-- Desktop controls key -->
+    <div id="controls-key" class="desktop-only">
       <div class="key-title">CONTROLS</div>
       <div class="key-row"><span class="key">WASD</span> Move</div>
       <div class="key-row"><span class="key">MOUSE</span> Look</div>
@@ -39,7 +41,39 @@
       <div class="key-row"><span class="key">P</span> Paintball</div>
       <div class="key-row"><span class="key">H</span> Hide/Show</div>
     </div>
-    <div class="dh"><span>H</span> toggle controls</div>
+    <div class="dh desktop-only"><span>H</span> toggle controls</div>
+
+    <!-- Mobile menu button -->
+    <div id="mobile-menu-btn" class="mobile-only">☰</div>
+
+    <!-- Mobile menu panel -->
+    <div id="mobile-menu" class="mobile-only hidden">
+      <div class="mobile-menu-header">
+        <span>MENU</span>
+        <div id="mobile-menu-close">✕</div>
+      </div>
+      <div class="mobile-menu-item" id="mm-jetpack">
+        <span class="mm-icon">🚀</span>
+        <span class="mm-label">Jetpack</span>
+        <span class="mm-status" id="mm-jetpack-status">OFF</span>
+      </div>
+      <div class="mobile-menu-item" id="mm-paintball">
+        <span class="mm-icon">🎨</span>
+        <span class="mm-label">Paintball</span>
+        <span class="mm-status" id="mm-paintball-status">OFF</span>
+      </div>
+      <div class="mobile-menu-item" id="mm-sprint">
+        <span class="mm-icon">⚡</span>
+        <span class="mm-label">Auto-Sprint</span>
+        <span class="mm-status" id="mm-sprint-status">OFF</span>
+      </div>
+      <div class="mobile-menu-item" id="mm-car">
+        <span class="mm-icon">🚗</span>
+        <span class="mm-label">Enter/Exit Car</span>
+      </div>
+    </div>
+
+    <!-- Mobile touch controls -->
     <div class="tc" id="touch-controls">
       <div class="jz" id="jz"><div class="jb" id="jb"><div class="jk" id="jk"></div></div></div>
       <div class="lz" id="lz"></div>
