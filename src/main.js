@@ -138,46 +138,14 @@ async function geocode(query) {
   };
 }
 
-// ═══ CARTOONIFY MATERIALS ═══
-function cartoonifyMaterial(mesh) {
-  const oldMat = mesh.material;
-  if (!oldMat) return;
-
-  // Get the base color/map from original material
-  let color = oldMat.color ? oldMat.color.clone() : new THREE.Color(0x888888);
-  let map = oldMat.map;
-
-  // Boost saturation of the color
-  const hsl = {};
-  color.getHSL(hsl);
-  hsl.s = Math.min(1, hsl.s * 1.3); // Boost saturation
-  hsl.l = Math.min(1, hsl.l * 1.1 + 0.05); // Slightly brighter
-  color.setHSL(hsl.h, hsl.s, hsl.l);
-
-  // Create toon-like material
-  const newMat = new THREE.MeshToonMaterial({
-    color: color,
-    map: map,
-    side: oldMat.side || THREE.FrontSide,
-  });
-
-  // Copy other properties
-  if (oldMat.transparent) newMat.transparent = true;
-  if (oldMat.opacity !== undefined) newMat.opacity = oldMat.opacity;
-  if (oldMat.alphaTest) newMat.alphaTest = oldMat.alphaTest;
-
-  mesh.material = newMat;
-
-  // Dispose old material
-  if (oldMat.dispose) oldMat.dispose();
-}
-
 // ═══ CARTOON SHADER ═══
 const ToonShader = {
   uniforms: {
     'tDiffuse': { value: null },
-    'levels': { value: 4.0 },
-    'saturation': { value: 1.4 },
+    'resolution': { value: new THREE.Vector2(1, 1) },
+    'levels': { value: 6.0 },
+    'saturation': { value: 1.6 },
+    'edgeStrength': { value: 1.0 },
   },
   vertexShader: `
     varying vec2 vUv;
@@ -188,8 +156,10 @@ const ToonShader = {
   `,
   fragmentShader: `
     uniform sampler2D tDiffuse;
+    uniform vec2 resolution;
     uniform float levels;
     uniform float saturation;
+    uniform float edgeStrength;
     varying vec2 vUv;
 
     vec3 rgb2hsv(vec3 c) {
@@ -207,21 +177,42 @@ const ToonShader = {
       return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
     }
 
+    float getLuma(vec3 c) {
+      return dot(c, vec3(0.299, 0.587, 0.114));
+    }
+
     void main() {
+      vec2 texel = vec2(1.0 / resolution.x, 1.0 / resolution.y);
       vec4 color = texture2D(tDiffuse, vUv);
+
+      // Edge detection (Sobel)
+      float tl = getLuma(texture2D(tDiffuse, vUv + texel * vec2(-1, -1)).rgb);
+      float t  = getLuma(texture2D(tDiffuse, vUv + texel * vec2( 0, -1)).rgb);
+      float tr = getLuma(texture2D(tDiffuse, vUv + texel * vec2( 1, -1)).rgb);
+      float l  = getLuma(texture2D(tDiffuse, vUv + texel * vec2(-1,  0)).rgb);
+      float r  = getLuma(texture2D(tDiffuse, vUv + texel * vec2( 1,  0)).rgb);
+      float bl = getLuma(texture2D(tDiffuse, vUv + texel * vec2(-1,  1)).rgb);
+      float b  = getLuma(texture2D(tDiffuse, vUv + texel * vec2( 0,  1)).rgb);
+      float br = getLuma(texture2D(tDiffuse, vUv + texel * vec2( 1,  1)).rgb);
+
+      float gx = -tl - 2.0*l - bl + tr + 2.0*r + br;
+      float gy = -tl - 2.0*t - tr + bl + 2.0*b + br;
+      float edge = sqrt(gx*gx + gy*gy);
 
       // Posterize (reduce color levels for cartoon look)
       vec3 posterized = floor(color.rgb * levels + 0.5) / levels;
 
       // Boost saturation for more vibrant colors
       vec3 hsv = rgb2hsv(posterized);
-      hsv.y *= saturation;
+      hsv.y = min(1.0, hsv.y * saturation);
+      hsv.z = min(1.0, hsv.z * 1.1 + 0.05); // Brightness boost
       vec3 saturated = hsv2rgb(hsv);
 
-      // Slight brightness boost
-      saturated = saturated * 1.1 + 0.02;
+      // Apply edge darkening
+      float edgeFactor = 1.0 - clamp(edge * edgeStrength * 2.0, 0.0, 0.7);
+      vec3 final = saturated * edgeFactor;
 
-      gl_FragColor = vec4(saturated, color.a);
+      gl_FragColor = vec4(final, color.a);
     }
   `
 };
@@ -264,9 +255,14 @@ function initThree() {
 
   // Toon shader pass
   const toonPass = new ShaderPass(ToonShader);
-  toonPass.uniforms['levels'].value = isMobile ? 5.0 : 4.0;
-  toonPass.uniforms['saturation'].value = 1.5;
+  toonPass.uniforms['levels'].value = isMobile ? 8.0 : 6.0;
+  toonPass.uniforms['saturation'].value = 1.6;
+  toonPass.uniforms['edgeStrength'].value = isMobile ? 0.5 : 1.0;
+  toonPass.uniforms['resolution'].value.set(innerWidth, innerHeight);
   composer.addPass(toonPass);
+
+  // Store reference to update resolution on resize
+  window.toonPass = toonPass;
 
   // Output pass
   composer.addPass(new OutputPass());
@@ -276,6 +272,9 @@ function initThree() {
     camera.updateProjectionMatrix();
     renderer.setSize(innerWidth, innerHeight);
     composer.setSize(innerWidth, innerHeight);
+    if (window.toonPass) {
+      window.toonPass.uniforms['resolution'].value.set(innerWidth, innerHeight);
+    }
   });
 }
 
@@ -317,14 +316,6 @@ async function setupTiles() {
     }
   };
 
-  // Cartoonify materials as tiles load
-  tilesRenderer.onLoadModel = (scene) => {
-    scene.traverse((child) => {
-      if (child.isMesh && child.material) {
-        cartoonifyMaterial(child);
-      }
-    });
-  };
 
   // Add tiles to scene with rotation to convert ECEF to local ENU
   // Create rotation matrix: ECEF -> ENU where Y is up
