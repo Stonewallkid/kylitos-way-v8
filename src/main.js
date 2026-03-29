@@ -707,8 +707,10 @@ function shootPaintball() {
   const src = player.position.clone();
   src.y += 1.1; // Shoulder height for smaller character
 
-  // Shoot in facing direction
-  const dir = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw));
+  // Shoot toward center of screen (where camera is looking)
+  // Use camera direction, accounting for both yaw and pitch
+  const dir = new THREE.Vector3();
+  camera.getWorldDirection(dir);
 
   firePaintball(src, dir);
 }
