@@ -260,15 +260,24 @@ function createPlayer() {
   // More realistic human-scale character (~1.7m tall)
   // Using muted colors that blend with photorealistic environment
 
+  // Leg pivots (for animation)
+  const leftLegPivot = new THREE.Group();
+  leftLegPivot.position.set(-0.1, 0.52, 0);
+  group.add(leftLegPivot);
+
+  const rightLegPivot = new THREE.Group();
+  rightLegPivot.position.set(0.1, 0.52, 0);
+  group.add(rightLegPivot);
+
   // Legs
   const legGeo = new THREE.CapsuleGeometry(0.08, 0.4, 4, 8);
   const pantsMat = new THREE.MeshStandardMaterial({ color: 0x2a3a4a, roughness: 0.8 });
   const leftLeg = new THREE.Mesh(legGeo, pantsMat);
-  leftLeg.position.set(-0.1, 0.32, 0);
-  group.add(leftLeg);
+  leftLeg.position.y = -0.2;
+  leftLegPivot.add(leftLeg);
   const rightLeg = new THREE.Mesh(legGeo, pantsMat);
-  rightLeg.position.set(0.1, 0.32, 0);
-  group.add(rightLeg);
+  rightLeg.position.y = -0.2;
+  rightLegPivot.add(rightLeg);
 
   // Torso
   const torsoGeo = new THREE.CapsuleGeometry(0.15, 0.35, 4, 8);
@@ -277,17 +286,26 @@ function createPlayer() {
   torso.position.y = 0.85;
   group.add(torso);
 
+  // Arm pivots (for animation)
+  const leftArmPivot = new THREE.Group();
+  leftArmPivot.position.set(-0.22, 1.0, 0);
+  group.add(leftArmPivot);
+
+  const rightArmPivot = new THREE.Group();
+  rightArmPivot.position.set(0.22, 1.0, 0);
+  group.add(rightArmPivot);
+
   // Arms
   const armGeo = new THREE.CapsuleGeometry(0.05, 0.3, 4, 8);
   const skinMat = new THREE.MeshStandardMaterial({ color: 0xc4a484, roughness: 0.6 });
   const leftArm = new THREE.Mesh(armGeo, skinMat);
-  leftArm.position.set(-0.22, 0.85, 0);
+  leftArm.position.y = -0.15;
   leftArm.rotation.z = 0.15;
-  group.add(leftArm);
+  leftArmPivot.add(leftArm);
   const rightArm = new THREE.Mesh(armGeo, skinMat);
-  rightArm.position.set(0.22, 0.85, 0);
+  rightArm.position.y = -0.15;
   rightArm.rotation.z = -0.15;
-  group.add(rightArm);
+  rightArmPivot.add(rightArm);
 
   // Head
   const headGeo = new THREE.SphereGeometry(0.12, 12, 12);
@@ -314,11 +332,18 @@ function createPlayer() {
   shadow.rotation.x = -Math.PI / 2;
   shadow.position.y = 0.02;
   group.add(shadow);
+
+  // Store references for animation
   group.userData.shadow = shadow;
+  group.userData.leftLegPivot = leftLegPivot;
+  group.userData.rightLegPivot = rightLegPivot;
+  group.userData.leftArmPivot = leftArmPivot;
+  group.userData.rightArmPivot = rightArmPivot;
+  group.userData.animTime = 0;
 
   // Start position in local coords
   group.userData.localPos = new THREE.Vector3(0, 5, 0);
-  group.userData.height = 1.4; // Character height for camera offset
+  group.userData.height = 1.4;
 
   scene.add(group);
   player = group;
@@ -900,7 +925,8 @@ function updatePlayer(dt) {
   updateJetpackHUD();
 
   // Auto-rotate camera to follow movement direction
-  if (moveZ > 0.1 || moveZ < -0.1 || moveX > 0.1 || moveX < -0.1) {
+  const isMoving = Math.abs(moveZ) > 0.1 || Math.abs(moveX) > 0.1;
+  if (isMoving) {
     const moveAngle = Math.atan2(dx, dz);
     // Smoothly rotate yaw to follow movement
     let targetYaw = moveAngle;
@@ -908,7 +934,29 @@ function updatePlayer(dt) {
     // Normalize to -PI to PI
     while (yawDiff > Math.PI) yawDiff -= Math.PI * 2;
     while (yawDiff < -Math.PI) yawDiff += Math.PI * 2;
-    yaw += yawDiff * 0.035; // Smooth follow
+    yaw += yawDiff * 0.12; // Smooth follow
+  }
+
+  // Running animation
+  const moveSpeed = Math.sqrt(dx * dx + dz * dz) / dt;
+  if (isMoving && onGround && moveSpeed > 0.5) {
+    const animSpeed = sprinting ? 18 : 12;
+    player.userData.animTime += dt * animSpeed;
+    const swing = Math.sin(player.userData.animTime) * 0.6;
+
+    // Legs swing opposite to each other
+    player.userData.leftLegPivot.rotation.x = swing;
+    player.userData.rightLegPivot.rotation.x = -swing;
+
+    // Arms swing opposite to legs
+    player.userData.leftArmPivot.rotation.x = -swing * 0.8;
+    player.userData.rightArmPivot.rotation.x = swing * 0.8;
+  } else {
+    // Return to idle pose
+    player.userData.leftLegPivot.rotation.x *= 0.85;
+    player.userData.rightLegPivot.rotation.x *= 0.85;
+    player.userData.leftArmPivot.rotation.x *= 0.85;
+    player.userData.rightArmPivot.rotation.x *= 0.85;
   }
 }
 
