@@ -41,7 +41,7 @@ let localEast = null, localNorth = null, localUp = null;
 
 // Constants
 const P_SPD = 8, SPRINT = 2.2, JUMP = 12, GRAV = -30, MSENS = 0.003;
-const CAM_DIST = 15, CAM_HEIGHT = 6;
+const CAM_DIST = 6, CAM_HEIGHT = 2.5;
 const CAR_ACCEL = 15, CAR_BRAKE = 20, CAR_MAX = 28, CAR_STEER = 2, CAR_FRICTION = 5;
 
 // WGS84 ellipsoid
@@ -257,22 +257,68 @@ async function setupTiles() {
 function createPlayer() {
   const group = new THREE.Group();
 
-  // Body - glowing green capsule
-  const bodyGeo = new THREE.CapsuleGeometry(0.4, 1.2, 8, 16);
-  const bodyMat = new THREE.MeshLambertMaterial({ color: 0x00ff88, emissive: 0x003322 });
-  const body = new THREE.Mesh(bodyGeo, bodyMat);
-  body.position.y = 1;
-  group.add(body);
+  // More realistic human-scale character (~1.7m tall)
+  // Using muted colors that blend with photorealistic environment
+
+  // Legs
+  const legGeo = new THREE.CapsuleGeometry(0.08, 0.4, 4, 8);
+  const pantsMat = new THREE.MeshStandardMaterial({ color: 0x2a3a4a, roughness: 0.8 });
+  const leftLeg = new THREE.Mesh(legGeo, pantsMat);
+  leftLeg.position.set(-0.1, 0.32, 0);
+  group.add(leftLeg);
+  const rightLeg = new THREE.Mesh(legGeo, pantsMat);
+  rightLeg.position.set(0.1, 0.32, 0);
+  group.add(rightLeg);
+
+  // Torso
+  const torsoGeo = new THREE.CapsuleGeometry(0.15, 0.35, 4, 8);
+  const shirtMat = new THREE.MeshStandardMaterial({ color: 0x3d5a6e, roughness: 0.7 });
+  const torso = new THREE.Mesh(torsoGeo, shirtMat);
+  torso.position.y = 0.85;
+  group.add(torso);
+
+  // Arms
+  const armGeo = new THREE.CapsuleGeometry(0.05, 0.3, 4, 8);
+  const skinMat = new THREE.MeshStandardMaterial({ color: 0xc4a484, roughness: 0.6 });
+  const leftArm = new THREE.Mesh(armGeo, skinMat);
+  leftArm.position.set(-0.22, 0.85, 0);
+  leftArm.rotation.z = 0.15;
+  group.add(leftArm);
+  const rightArm = new THREE.Mesh(armGeo, skinMat);
+  rightArm.position.set(0.22, 0.85, 0);
+  rightArm.rotation.z = -0.15;
+  group.add(rightArm);
 
   // Head
-  const headGeo = new THREE.SphereGeometry(0.35, 16, 16);
-  const headMat = new THREE.MeshLambertMaterial({ color: 0xffcc99 });
-  const head = new THREE.Mesh(headGeo, headMat);
-  head.position.y = 2.1;
+  const headGeo = new THREE.SphereGeometry(0.12, 12, 12);
+  const head = new THREE.Mesh(headGeo, skinMat);
+  head.position.y = 1.22;
   group.add(head);
+
+  // Hair
+  const hairGeo = new THREE.SphereGeometry(0.13, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2);
+  const hairMat = new THREE.MeshStandardMaterial({ color: 0x2a1a0a, roughness: 0.9 });
+  const hair = new THREE.Mesh(hairGeo, hairMat);
+  hair.position.y = 1.24;
+  group.add(hair);
+
+  // Shadow blob under feet for grounding
+  const shadowGeo = new THREE.CircleGeometry(0.2, 16);
+  const shadowMat = new THREE.MeshBasicMaterial({
+    color: 0x000000,
+    transparent: true,
+    opacity: 0.3,
+    depthWrite: false
+  });
+  const shadow = new THREE.Mesh(shadowGeo, shadowMat);
+  shadow.rotation.x = -Math.PI / 2;
+  shadow.position.y = 0.02;
+  group.add(shadow);
+  group.userData.shadow = shadow;
 
   // Start position in local coords
   group.userData.localPos = new THREE.Vector3(0, 5, 0);
+  group.userData.height = 1.4; // Character height for camera offset
 
   scene.add(group);
   player = group;
@@ -284,36 +330,46 @@ function createPlayer() {
 function createVehicle(localX, localZ) {
   const car = new THREE.Group();
 
-  const colors = [0x3366ff, 0xff3366, 0x33ff66, 0xffff33, 0xff6600, 0x9933ff, 0xffffff, 0x222222];
+  // More realistic muted car colors
+  const colors = [0x2c3e50, 0x7f8c8d, 0x34495e, 0x1a1a2e, 0x4a4a4a, 0x8b0000, 0x1e3d59, 0xf0f0f0];
   const color = colors[Math.floor(Math.random() * colors.length)];
 
-  // Body
-  const bodyGeo = new THREE.BoxGeometry(2, 0.8, 4.5);
-  const bodyMat = new THREE.MeshLambertMaterial({ color });
+  // Body - realistic car proportions (~4.5m long, 1.8m wide, 1.4m tall)
+  const bodyGeo = new THREE.BoxGeometry(1.8, 0.7, 4.2);
+  const bodyMat = new THREE.MeshStandardMaterial({ color, roughness: 0.3, metalness: 0.6 });
   const body = new THREE.Mesh(bodyGeo, bodyMat);
-  body.position.y = 0.6;
+  body.position.y = 0.55;
   car.add(body);
 
-  // Roof
-  const roofGeo = new THREE.BoxGeometry(1.6, 0.5, 2.2);
-  const roof = new THREE.Mesh(roofGeo, bodyMat);
-  roof.position.set(0, 1.15, -0.3);
+  // Roof/cabin
+  const roofGeo = new THREE.BoxGeometry(1.5, 0.5, 2.0);
+  const glassMat = new THREE.MeshStandardMaterial({ color: 0x87CEEB, roughness: 0.1, metalness: 0.3, transparent: true, opacity: 0.6 });
+  const roof = new THREE.Mesh(roofGeo, glassMat);
+  roof.position.set(0, 1.05, -0.2);
   car.add(roof);
 
   // Wheels
-  const wheelGeo = new THREE.CylinderGeometry(0.38, 0.38, 0.28, 16);
-  const wheelMat = new THREE.MeshLambertMaterial({ color: 0x222222 });
-  [[0.95, 0.38, 1.4], [-0.95, 0.38, 1.4], [0.95, 0.38, -1.4], [-0.95, 0.38, -1.4]].forEach(pos => {
+  const wheelGeo = new THREE.CylinderGeometry(0.35, 0.35, 0.22, 16);
+  const wheelMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.9 });
+  [[0.85, 0.35, 1.3], [-0.85, 0.35, 1.3], [0.85, 0.35, -1.3], [-0.85, 0.35, -1.3]].forEach(pos => {
     const wheel = new THREE.Mesh(wheelGeo, wheelMat);
     wheel.rotation.z = Math.PI / 2;
     wheel.position.set(...pos);
     car.add(wheel);
   });
 
+  // Shadow under car
+  const shadowGeo = new THREE.PlaneGeometry(2, 4.5);
+  const shadowMat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.25, depthWrite: false });
+  const shadow = new THREE.Mesh(shadowGeo, shadowMat);
+  shadow.rotation.x = -Math.PI / 2;
+  shadow.position.y = 0.02;
+  car.add(shadow);
+
   car.userData = {
     speed: 0,
     angle: 0,
-    localPos: new THREE.Vector3(localX, 2, localZ)
+    localPos: new THREE.Vector3(localX, 1, localZ)
   };
 
   scene.add(car);
@@ -326,26 +382,26 @@ function createJetpackMesh() {
 
   const g = new THREE.Group();
 
-  // Tank
-  const tankGeo = new THREE.CylinderGeometry(0.15, 0.15, 0.6, 8);
-  const tankMat = new THREE.MeshLambertMaterial({ color: 0x444444 });
+  // Smaller tanks for smaller character
+  const tankGeo = new THREE.CylinderGeometry(0.04, 0.04, 0.2, 8);
+  const tankMat = new THREE.MeshStandardMaterial({ color: 0x333333, roughness: 0.4, metalness: 0.6 });
   const tank1 = new THREE.Mesh(tankGeo, tankMat);
-  tank1.position.set(-0.25, 1.2, -0.3);
+  tank1.position.set(-0.1, 0.85, -0.12);
   g.add(tank1);
   const tank2 = tank1.clone();
-  tank2.position.x = 0.25;
+  tank2.position.x = 0.1;
   g.add(tank2);
 
   // Flames
-  const flameGeo = new THREE.ConeGeometry(0.1, 0.4, 8);
+  const flameGeo = new THREE.ConeGeometry(0.03, 0.15, 8);
   const flameMat = new THREE.MeshBasicMaterial({ color: 0xff6600 });
   const flame1 = new THREE.Mesh(flameGeo, flameMat);
-  flame1.position.set(-0.25, 0.7, -0.3);
+  flame1.position.set(-0.1, 0.68, -0.12);
   flame1.rotation.x = Math.PI;
   flame1.visible = false;
   g.add(flame1);
   const flame2 = flame1.clone();
-  flame2.position.x = 0.25;
+  flame2.position.x = 0.1;
   g.add(flame2);
 
   g.flame1 = flame1;
@@ -404,7 +460,7 @@ function shootPaintball() {
   if (!player || activeVehicle) return;
 
   const src = player.position.clone();
-  src.y += 1.5;
+  src.y += 1.1; // Shoulder height for smaller character
 
   // Shoot in facing direction
   const dir = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw));
@@ -416,7 +472,7 @@ function shootAtScreen(sx, sy) {
   if (!player) return;
 
   const src = player.position.clone();
-  src.y += 1.5;
+  src.y += 1.1; // Shoulder height for smaller character
 
   // Raycast from screen point
   const mouse = new THREE.Vector2(
@@ -743,8 +799,8 @@ function enterNearestVehicle() {
 function exitVehicle() {
   if (!activeVehicle) return;
   player.userData.localPos.copy(activeVehicle.userData.localPos);
-  player.userData.localPos.x += 2.5;
-  player.userData.localPos.y += 1;
+  player.userData.localPos.x += 2;
+  player.userData.localPos.y += 0.5;
   player.visible = true;
   velY = 0;
   activeVehicle = null;
@@ -917,8 +973,8 @@ function updateCamera() {
   // Smooth camera movement
   camera.position.lerp(camPos, 0.12);
 
-  // Look at target
-  const lookAt = new THREE.Vector3(tgtLocal.x, tgtLocal.y + 1.5, tgtLocal.z);
+  // Look at target (upper body of character)
+  const lookAt = new THREE.Vector3(tgtLocal.x, tgtLocal.y + 1.0, tgtLocal.z);
   camera.lookAt(lookAt);
 }
 
