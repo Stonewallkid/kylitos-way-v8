@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1.0,user-scalable=no,maximum-scale=1.0">
+  <title>Kylito's Way V8 - Google 3D</title>
+  <script type="module" crossorigin src="./assets/index-BnswRIPA.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-Cm9HufoO.css">
+</head>
+<body>
+  <div id="launch">
+    <div class="gbg"></div>
+    <div class="tl">Kylito's Way</div>
+    <div class="ver">V8 — Google Photorealistic</div>
+    <div class="sb">Real World 3D</div>
+    <div class="ig">
+      <div class="sr">
+        <input type="text" id="li" placeholder="Address, city, or landmark..." value="Downtown Fayetteville, AR"/>
+        <button class="bt" id="go-btn">Go</button>
+      </div>
+      <div style="color:rgba(255,255,255,.15);font-size:.5rem;margin-top:.3em">— OR —</div>
+      <button class="bt bt2" id="gps-btn">📍 Use My Location</button>
+    </div>
+    <div id="loading-spinner"></div>
+    <div id="st"></div>
+    <div class="pw" id="pw"><div class="pb" id="pb"></div></div>
+  </div>
+
+  <div id="hud">
+    <div class="hl"><div id="hn">—</div></div>
+    <div class="dh"><span>WASD</span> move · <span>MOUSE</span> look · <span>SHIFT</span> sprint · <span>SPACE</span> jump · <span>E</span> car · <span>J</span> jetpack · <span>P</span> paint</div>
+    <div class="tc" id="touch-controls">
+      <div class="jz" id="jz"><div class="jb" id="jb"><div class="jk" id="jk"></div></div></div>
+      <div class="lz" id="lz"></div>
+      <div class="ab" id="action-btns"></div>
+    </div>
+  </div>
+
+  <div id="speedometer"><span id="spd-val">0</span> <span class="unit">MPH</span></div>
+  <div id="attribution"></div>
+  <canvas id="gc"></canvas>
+
+</body>
+</html>

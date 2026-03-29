@@ -1,0 +1,17 @@
+{
+  "name": "kylitos-way-v8",
+  "version": "8.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "three": "^0.160.0",
+    "3d-tiles-renderer": "^0.3.34"
+  },
+  "devDependencies": {
+    "vite": "^5.0.0"
+  }
+}
