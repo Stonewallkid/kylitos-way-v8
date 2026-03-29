@@ -1380,13 +1380,35 @@ function gameLoop() {
     tilesRenderer.update();
   }
 
-  // Arrow key looking (independent of movement)
+  // Arrow key looking (takes priority over auto-follow)
   const lookX = arrowLook.right - arrowLook.left;
   const lookY = arrowLook.down - arrowLook.up;
-  if (lookX !== 0 || lookY !== 0) {
+  const arrowsActive = lookX !== 0 || lookY !== 0;
+
+  if (arrowsActive) {
     yaw -= lookX * ARROW_LOOK_SPEED * dt;
     pitch += lookY * ARROW_LOOK_SPEED * dt * 0.5;
     pitch = Math.max(-0.3, Math.min(1.4, pitch));
+  }
+
+  // Auto-follow camera when running (but arrows override)
+  if (!arrowsActive && !activeVehicle && player) {
+    const moveX = mR - mL + (Math.abs(joyVec.x) > 0.1 ? joyVec.x : 0);
+    const moveZ = mF - mB + (Math.abs(joyVec.y) > 0.1 ? -joyVec.y : 0);
+    const isMoving = Math.abs(moveZ) > 0.1 || Math.abs(moveX) > 0.1;
+
+    if (isMoving) {
+      // Calculate movement direction in world space
+      const moveDirX = Math.sin(yaw) * moveZ - Math.cos(yaw) * moveX;
+      const moveDirZ = Math.cos(yaw) * moveZ + Math.sin(yaw) * moveX;
+      const targetYaw = Math.atan2(moveDirX, moveDirZ);
+
+      // Slowly rotate camera toward movement direction
+      let yawDiff = targetYaw - yaw;
+      while (yawDiff > Math.PI) yawDiff -= Math.PI * 2;
+      while (yawDiff < -Math.PI) yawDiff += Math.PI * 2;
+      yaw += yawDiff * 0.02; // Slow auto-follow (0.02 = gentle)
+    }
   }
 
   // Slash key shooting (auto-fire when held in paintball mode)
