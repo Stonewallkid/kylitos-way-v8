@@ -36,6 +36,12 @@ const PAINT_SPEED = 50;
 const PAINT_GRAVITY = -15;
 const MAX_SPLATS = 300;
 
+// Mini map
+let spawnPoint = { x: 0, z: 0 };
+let mapMarkers = [];
+let minimapCtx = null;
+const MINIMAP_SCALE = 3; // meters per pixel
+
 // World origin for local coordinate system
 let worldOriginECEF = null;
 let localEast = null, localNorth = null, localUp = null;
@@ -114,14 +120,16 @@ function setP(pct) {
 
 // ═══ GEOCODING ═══
 async function geocode(query) {
-  const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1`;
-  const resp = await fetch(url, { headers: { 'User-Agent': 'KylitosWay/1.0' } });
+  // Use Google Geocoding API (same key as tiles)
+  const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(query)}&key=${GOOGLE_API_KEY}`;
+  const resp = await fetch(url);
   const data = await resp.json();
-  if (!data.length) throw new Error('Location not found');
+  if (data.status !== 'OK' || !data.results.length) throw new Error('Location not found');
+  const result = data.results[0];
   return {
-    lat: parseFloat(data[0].lat),
-    lon: parseFloat(data[0].lon),
-    name: data[0].display_name.split(',')[0]
+    lat: result.geometry.location.lat,
+    lon: result.geometry.location.lng,
+    name: result.address_components[0]?.short_name || query
   };
 }
 
@@ -586,6 +594,154 @@ function createSplat(pos, normal, color) {
   }
 }
 
+// ═══ MINI MAP ═══
+function initMinimap() {
+  const canvas = document.getElementById('minimap');
+  if (canvas) {
+    minimapCtx = canvas.getContext('2d');
+  }
+}
+
+function drawMinimap() {
+  if (!minimapCtx || !player) return;
+
+  const canvas = minimapCtx.canvas;
+  const cx = canvas.width / 2;
+  const cy = canvas.height / 2;
+  const playerPos = player.userData.localPos;
+
+  // Clear with dark background
+  minimapCtx.fillStyle = 'rgba(10, 15, 20, 0.9)';
+  minimapCtx.beginPath();
+  minimapCtx.arc(cx, cy, cx, 0, Math.PI * 2);
+  minimapCtx.fill();
+
+  // Draw grid
+  minimapCtx.strokeStyle = 'rgba(0, 255, 170, 0.1)';
+  minimapCtx.lineWidth = 1;
+  for (let i = -5; i <= 5; i++) {
+    const offset = i * 20;
+    minimapCtx.beginPath();
+    minimapCtx.moveTo(cx + offset, 0);
+    minimapCtx.lineTo(cx + offset, canvas.height);
+    minimapCtx.stroke();
+    minimapCtx.beginPath();
+    minimapCtx.moveTo(0, cy + offset);
+    minimapCtx.lineTo(canvas.width, cy + offset);
+    minimapCtx.stroke();
+  }
+
+  // Draw spawn point (yellow star)
+  const spawnDx = (spawnPoint.x - playerPos.x) / MINIMAP_SCALE;
+  const spawnDz = (spawnPoint.z - playerPos.z) / MINIMAP_SCALE;
+  // Rotate to account for player yaw (map rotates with player)
+  const spawnRx = spawnDx * Math.cos(-yaw) - spawnDz * Math.sin(-yaw);
+  const spawnRz = spawnDx * Math.sin(-yaw) + spawnDz * Math.cos(-yaw);
+  const spawnMapX = cx + spawnRx;
+  const spawnMapY = cy - spawnRz;
+
+  if (Math.abs(spawnRx) < cx && Math.abs(spawnRz) < cy) {
+    minimapCtx.fillStyle = '#ffcc00';
+    minimapCtx.beginPath();
+    drawStar(minimapCtx, spawnMapX, spawnMapY, 5, 6, 3);
+    minimapCtx.fill();
+  }
+
+  // Draw markers (dropped pins)
+  mapMarkers.forEach((marker, i) => {
+    const dx = (marker.x - playerPos.x) / MINIMAP_SCALE;
+    const dz = (marker.z - playerPos.z) / MINIMAP_SCALE;
+    const rx = dx * Math.cos(-yaw) - dz * Math.sin(-yaw);
+    const rz = dx * Math.sin(-yaw) + dz * Math.cos(-yaw);
+
+    if (Math.abs(rx) < cx && Math.abs(rz) < cy) {
+      minimapCtx.fillStyle = marker.color || '#ff66aa';
+      minimapCtx.beginPath();
+      minimapCtx.arc(cx + rx, cy - rz, 4, 0, Math.PI * 2);
+      minimapCtx.fill();
+      // Number label
+      minimapCtx.fillStyle = '#fff';
+      minimapCtx.font = '8px Orbitron';
+      minimapCtx.textAlign = 'center';
+      minimapCtx.fillText(i + 1, cx + rx, cy - rz + 3);
+    }
+  });
+
+  // Draw vehicles
+  vehicles.forEach(v => {
+    const dx = (v.userData.localPos.x - playerPos.x) / MINIMAP_SCALE;
+    const dz = (v.userData.localPos.z - playerPos.z) / MINIMAP_SCALE;
+    const rx = dx * Math.cos(-yaw) - dz * Math.sin(-yaw);
+    const rz = dx * Math.sin(-yaw) + dz * Math.cos(-yaw);
+
+    if (Math.abs(rx) < cx && Math.abs(rz) < cy) {
+      minimapCtx.fillStyle = v === activeVehicle ? '#00ffaa' : '#4488ff';
+      minimapCtx.fillRect(cx + rx - 3, cy - rz - 2, 6, 4);
+    }
+  });
+
+  // Draw player (always center, pointing up)
+  minimapCtx.fillStyle = '#00ff88';
+  minimapCtx.beginPath();
+  minimapCtx.moveTo(cx, cy - 8);
+  minimapCtx.lineTo(cx - 5, cy + 5);
+  minimapCtx.lineTo(cx + 5, cy + 5);
+  minimapCtx.closePath();
+  minimapCtx.fill();
+
+  // Draw compass ring
+  minimapCtx.strokeStyle = 'rgba(0, 255, 170, 0.3)';
+  minimapCtx.lineWidth = 2;
+  minimapCtx.beginPath();
+  minimapCtx.arc(cx, cy, cx - 2, 0, Math.PI * 2);
+  minimapCtx.stroke();
+
+  // North indicator on ring (rotates with player)
+  const northAngle = -yaw - Math.PI / 2;
+  const northX = cx + Math.cos(northAngle) * (cx - 8);
+  const northY = cy + Math.sin(northAngle) * (cy - 8);
+  minimapCtx.fillStyle = '#ff4444';
+  minimapCtx.beginPath();
+  minimapCtx.arc(northX, northY, 4, 0, Math.PI * 2);
+  minimapCtx.fill();
+
+  // Update coords display
+  const coordsEl = document.getElementById('minimap-coords');
+  if (coordsEl) {
+    coordsEl.textContent = `${playerPos.x.toFixed(0)}, ${playerPos.z.toFixed(0)}`;
+  }
+}
+
+function drawStar(ctx, x, y, points, outer, inner) {
+  ctx.moveTo(x, y - outer);
+  for (let i = 0; i < points; i++) {
+    const angle = (i * 2 * Math.PI / points) - Math.PI / 2;
+    const nextAngle = angle + Math.PI / points;
+    ctx.lineTo(x + Math.cos(angle) * outer, y + Math.sin(angle) * outer);
+    ctx.lineTo(x + Math.cos(nextAngle) * inner, y + Math.sin(nextAngle) * inner);
+  }
+  ctx.closePath();
+}
+
+function dropMarker() {
+  if (!player) return;
+  const pos = player.userData.localPos;
+  const colors = ['#ff66aa', '#66aaff', '#aaff66', '#ffaa66', '#aa66ff'];
+  mapMarkers.push({
+    x: pos.x,
+    z: pos.z,
+    color: colors[mapMarkers.length % colors.length]
+  });
+  setS(`Marker ${mapMarkers.length} dropped!`);
+  setTimeout(() => setS(''), 2000);
+}
+
+function clearMarkers() {
+  mapMarkers = [];
+  setS('Markers cleared');
+  setTimeout(() => setS(''), 2000);
+}
+
 function updateJetpackHUD() {
   let hud = document.getElementById('jetpack-hud');
 
@@ -646,6 +802,14 @@ function setupControls() {
     if (e.code === 'KeyH') {
       const controls = document.getElementById('controls-key');
       if (controls) controls.classList.toggle('hidden');
+      return;
+    }
+    if (e.code === 'KeyM') {
+      dropMarker();
+      return;
+    }
+    if (e.code === 'KeyC') {
+      clearMarkers();
       return;
     }
     switch (e.code) {
@@ -749,6 +913,18 @@ function setupMobile() {
     e.preventDefault();
     if (activeVehicle) exitVehicle();
     else enterNearestVehicle();
+    menu.classList.add('hidden');
+  });
+
+  document.getElementById('mm-marker')?.addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    dropMarker();
+    menu.classList.add('hidden');
+  });
+
+  document.getElementById('mm-clear-markers')?.addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    clearMarkers();
     menu.classList.add('hidden');
   });
 
@@ -941,6 +1117,9 @@ function gameLoop() {
   // Update paintballs
   if (paintMode) updatePaintballs(dt);
 
+  // Update minimap
+  drawMinimap();
+
   renderer.render(scene, camera);
 }
 
@@ -1121,6 +1300,10 @@ async function startGame() {
 
     createPlayer();
     createJetpackMesh();
+
+    // Set spawn point for minimap
+    spawnPoint = { x: 0, z: 0 };
+    initMinimap();
 
     // Spawn cars nearby
     for (let i = 0; i < 5; i++) {
