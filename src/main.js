@@ -934,7 +934,7 @@ function updatePlayer(dt) {
     // Normalize to -PI to PI
     while (yawDiff > Math.PI) yawDiff -= Math.PI * 2;
     while (yawDiff < -Math.PI) yawDiff += Math.PI * 2;
-    yaw += yawDiff * 0.12; // Smooth follow
+    yaw += yawDiff * 0.075; // Smooth follow
   }
 
   // Running animation
