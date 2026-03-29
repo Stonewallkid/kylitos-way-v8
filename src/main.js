@@ -29,6 +29,15 @@ const JETPACK_MAX_FUEL = 15;
 let jetpackFuel = JETPACK_MAX_FUEL;
 let jetpackMesh = null;
 
+// Wingsuit
+let wingsuitActive = false;
+let wingsuitMesh = null;
+const WINGSUIT_GLIDE_RATIO = 3; // Forward distance per unit of fall
+const WINGSUIT_MIN_FALL = -4; // Minimum fall speed when gliding
+
+// Night mode
+let nightMode = false;
+
 // Paintball
 let paintMode = false;
 let paintColor = '#ff3366';
@@ -453,6 +462,105 @@ function createJetpackMesh() {
 
   player.add(g);
   jetpackMesh = g;
+}
+
+// ═══ WINGSUIT MESH ═══
+function createWingsuitMesh() {
+  if (wingsuitMesh || !player) return;
+
+  const g = new THREE.Group();
+
+  // Wing material - translucent fabric look
+  const wingMat = new THREE.MeshStandardMaterial({
+    color: 0x2244aa,
+    roughness: 0.8,
+    transparent: true,
+    opacity: 0.85,
+    side: THREE.DoubleSide
+  });
+
+  // Left wing (triangular shape from arm to leg)
+  const leftWingGeo = new THREE.BufferGeometry();
+  const leftVerts = new Float32Array([
+    -0.22, 1.0, 0,    // Shoulder
+    -0.12, 0.3, 0,    // Hip
+    -0.8, 0.6, 0.1    // Wing tip
+  ]);
+  leftWingGeo.setAttribute('position', new THREE.BufferAttribute(leftVerts, 3));
+  leftWingGeo.computeVertexNormals();
+  const leftWing = new THREE.Mesh(leftWingGeo, wingMat);
+  g.add(leftWing);
+
+  // Right wing
+  const rightWingGeo = new THREE.BufferGeometry();
+  const rightVerts = new Float32Array([
+    0.22, 1.0, 0,
+    0.12, 0.3, 0,
+    0.8, 0.6, 0.1
+  ]);
+  rightWingGeo.setAttribute('position', new THREE.BufferAttribute(rightVerts, 3));
+  rightWingGeo.computeVertexNormals();
+  const rightWing = new THREE.Mesh(rightWingGeo, wingMat);
+  g.add(rightWing);
+
+  // Leg wing (between legs)
+  const legWingGeo = new THREE.BufferGeometry();
+  const legVerts = new Float32Array([
+    -0.12, 0.3, 0,
+    0.12, 0.3, 0,
+    0, 0.1, 0.15
+  ]);
+  legWingGeo.setAttribute('position', new THREE.BufferAttribute(legVerts, 3));
+  legWingGeo.computeVertexNormals();
+  const legWing = new THREE.Mesh(legWingGeo, wingMat);
+  g.add(legWing);
+
+  g.visible = false; // Hidden until activated
+  player.add(g);
+  wingsuitMesh = g;
+}
+
+// ═══ NIGHT MODE ═══
+function toggleNightMode() {
+  nightMode = !nightMode;
+
+  if (nightMode) {
+    // Night sky
+    scene.background = new THREE.Color(0x0a0a1a);
+
+    // Dim the lights
+    scene.traverse(obj => {
+      if (obj.isAmbientLight) {
+        obj.intensity = 0.15;
+        obj.color.setHex(0x4444aa);
+      }
+      if (obj.isDirectionalLight) {
+        obj.intensity = 0.3;
+        obj.color.setHex(0x8888ff); // Moonlight blue tint
+      }
+    });
+
+    setS('Night mode ON');
+  } else {
+    // Day sky
+    scene.background = new THREE.Color(0x87CEEB);
+
+    // Restore lights
+    scene.traverse(obj => {
+      if (obj.isAmbientLight) {
+        obj.intensity = 0.6;
+        obj.color.setHex(0xffffff);
+      }
+      if (obj.isDirectionalLight) {
+        obj.intensity = 1.2;
+        obj.color.setHex(0xffffff);
+      }
+    });
+
+    setS('Day mode ON');
+  }
+
+  setTimeout(() => setS(''), 2000);
 }
 
 // ═══ ZOMBIE SYSTEM ═══
@@ -1074,6 +1182,23 @@ function setupControls() {
       clearMarkers();
       return;
     }
+    if (e.code === 'KeyG') {
+      // Toggle wingsuit (only works in air)
+      if (!onGround) {
+        wingsuitActive = !wingsuitActive;
+        if (wingsuitMesh) wingsuitMesh.visible = wingsuitActive;
+        setS(wingsuitActive ? 'Wingsuit DEPLOYED!' : 'Wingsuit retracted');
+        setTimeout(() => setS(''), 2000);
+      } else {
+        setS('Jump first to deploy wingsuit!');
+        setTimeout(() => setS(''), 2000);
+      }
+      return;
+    }
+    if (e.code === 'KeyN') {
+      toggleNightMode();
+      return;
+    }
     switch (e.code) {
       // WASD for movement
       case 'KeyW': mF = 1; break;
@@ -1475,6 +1600,28 @@ function updatePlayer(dt) {
       jetpackMesh.flame1.visible = true;
       jetpackMesh.flame2.visible = true;
     }
+    // Disable wingsuit while jetpacking
+    if (wingsuitActive) {
+      wingsuitActive = false;
+      if (wingsuitMesh) wingsuitMesh.visible = false;
+    }
+  } else if (wingsuitActive && !onGround && velY < 0) {
+    // Wingsuit gliding physics
+    // Slow the fall significantly
+    velY = Math.max(velY, WINGSUIT_MIN_FALL);
+    velY += GRAV * dt * 0.1; // Much reduced gravity
+
+    // Convert fall speed into forward speed
+    const glideSpeed = Math.abs(velY) * WINGSUIT_GLIDE_RATIO * (sprinting ? 1.5 : 1);
+    const glideDx = Math.sin(yaw) * glideSpeed * dt;
+    const glideDz = Math.cos(yaw) * glideSpeed * dt;
+    player.userData.localPos.x += glideDx;
+    player.userData.localPos.z += glideDz;
+
+    if (jetpackMesh) {
+      jetpackMesh.flame1.visible = false;
+      jetpackMesh.flame2.visible = false;
+    }
   } else {
     // Normal gravity
     velY += GRAV * dt;
@@ -1492,6 +1639,13 @@ function updatePlayer(dt) {
     player.userData.localPos.y = groundY + 0.1;
     velY = 0;
     onGround = true;
+
+    // Auto-retract wingsuit on landing
+    if (wingsuitActive) {
+      wingsuitActive = false;
+      if (wingsuitMesh) wingsuitMesh.visible = false;
+    }
+
     // Recharge jetpack on ground
     if (jetpackFuel < JETPACK_MAX_FUEL) {
       jetpackFuel += dt * 0.5;
@@ -1624,6 +1778,7 @@ async function startGame() {
 
     createPlayer();
     createJetpackMesh();
+    createWingsuitMesh();
 
     // Set spawn point for minimap
     spawnPoint = { x: 0, z: 0 };
