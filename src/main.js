@@ -18,7 +18,7 @@ let yaw = 0, pitch = 0.4;
 let cLat, cLon, locName = '';
 let joyVec = { x: 0, y: 0 }, lookTID = null;
 let arrowLook = { left: 0, right: 0, up: 0, down: 0 }; // Arrow key look state
-let commandHeld = false; // For shooting with command key
+let fireKeyHeld = false; // For shooting with / key
 let vehicles = [], activeVehicle = null;
 let carAccelInput = 0, carBrakeInput = 0;
 let autoSprint = false; // Mobile auto-sprint toggle
@@ -1061,10 +1061,10 @@ function setupControls() {
         e.preventDefault();
         if (!activeVehicle && onGround) { velY = JUMP; onGround = false; }
         break;
-      // Command key for shooting (Meta on Mac)
-      case 'MetaLeft': case 'MetaRight':
+      // Slash key for shooting
+      case 'Slash':
         e.preventDefault();
-        commandHeld = true;
+        fireKeyHeld = true;
         break;
     }
   });
@@ -1080,7 +1080,7 @@ function setupControls() {
       case 'ArrowLeft': arrowLook.left = 0; break;
       case 'ArrowRight': arrowLook.right = 0; break;
       case 'ShiftLeft': case 'ShiftRight': sprinting = false; break;
-      case 'MetaLeft': case 'MetaRight': commandHeld = false; break;
+      case 'Slash': fireKeyHeld = false; break;
     }
   });
 
@@ -1097,7 +1097,7 @@ function setupControls() {
       lastX = e.clientX;
       lastY = e.clientY;
     }
-    pitch = Math.max(0.1, Math.min(1.4, pitch));
+    pitch = Math.max(-0.3, Math.min(1.4, pitch));
   });
 
   renderer.domElement.addEventListener('click', (e) => {
@@ -1240,7 +1240,7 @@ function setupMobile() {
       if (t.identifier === lookTID) {
         yaw -= (t.clientX - lx) * 0.005;
         pitch -= (t.clientY - ly) * 0.003;
-        pitch = Math.max(0.1, Math.min(1.4, pitch));
+        pitch = Math.max(-0.3, Math.min(1.4, pitch));
         lx = t.clientX;
         ly = t.clientY;
       }
@@ -1359,11 +1359,11 @@ function gameLoop() {
   if (lookX !== 0 || lookY !== 0) {
     yaw -= lookX * ARROW_LOOK_SPEED * dt;
     pitch += lookY * ARROW_LOOK_SPEED * dt * 0.5;
-    pitch = Math.max(0.1, Math.min(1.4, pitch));
+    pitch = Math.max(-0.3, Math.min(1.4, pitch));
   }
 
-  // Command key shooting (auto-fire when held in paintball mode)
-  if (commandHeld && paintMode && !activeVehicle) {
+  // Slash key shooting (auto-fire when held in paintball mode)
+  if (fireKeyHeld && paintMode && !activeVehicle) {
     lastShotTime += dt;
     if (lastShotTime >= SHOT_COOLDOWN) {
       shootPaintball();
