@@ -38,6 +38,14 @@ const WINGSUIT_MIN_FALL = -4; // Minimum fall speed when gliding
 // Night mode
 let nightMode = false;
 
+// Jet
+let jet = null;
+let inJet = false;
+const JET_MAX_SPEED = 270; // ~600 MPH in m/s
+const JET_ACCEL = 80;
+const JET_TURN_SPEED = 1.5;
+const JET_PITCH_SPEED = 1.0;
+
 // Paintball
 let paintMode = false;
 let paintColor = '#ff3366';
@@ -518,6 +526,163 @@ function createWingsuitMesh() {
   g.visible = false; // Hidden until activated
   player.add(g);
   wingsuitMesh = g;
+}
+
+// ═══ JET ═══
+function createJet(localX, localZ) {
+  const g = new THREE.Group();
+
+  // Fuselage
+  const bodyGeo = new THREE.CylinderGeometry(0.8, 0.5, 8, 8);
+  const bodyMat = new THREE.MeshStandardMaterial({ color: 0x333344, metalness: 0.8, roughness: 0.2 });
+  const body = new THREE.Mesh(bodyGeo, bodyMat);
+  body.rotation.x = Math.PI / 2;
+  g.add(body);
+
+  // Cockpit (glass dome)
+  const cockpitGeo = new THREE.SphereGeometry(0.7, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2);
+  const cockpitMat = new THREE.MeshStandardMaterial({ color: 0x88ccff, metalness: 0.3, roughness: 0.1, transparent: true, opacity: 0.6 });
+  const cockpit = new THREE.Mesh(cockpitGeo, cockpitMat);
+  cockpit.position.set(0, 0.5, 1.5);
+  cockpit.rotation.x = -Math.PI / 2;
+  g.add(cockpit);
+
+  // Wings
+  const wingGeo = new THREE.BoxGeometry(8, 0.1, 2);
+  const wingMat = new THREE.MeshStandardMaterial({ color: 0x444455, metalness: 0.7, roughness: 0.3 });
+  const wings = new THREE.Mesh(wingGeo, wingMat);
+  wings.position.set(0, 0, 0);
+  g.add(wings);
+
+  // Tail fin (vertical)
+  const tailFinGeo = new THREE.BoxGeometry(0.1, 1.5, 1.2);
+  const tailFin = new THREE.Mesh(tailFinGeo, wingMat);
+  tailFin.position.set(0, 0.7, -3.5);
+  g.add(tailFin);
+
+  // Tail wings (horizontal)
+  const tailWingGeo = new THREE.BoxGeometry(3, 0.08, 0.8);
+  const tailWings = new THREE.Mesh(tailWingGeo, wingMat);
+  tailWings.position.set(0, 0, -3.5);
+  g.add(tailWings);
+
+  // Engine glow
+  const engineGeo = new THREE.CylinderGeometry(0.4, 0.5, 0.5, 8);
+  const engineMat = new THREE.MeshBasicMaterial({ color: 0xff6600 });
+  const engine = new THREE.Mesh(engineGeo, engineMat);
+  engine.rotation.x = Math.PI / 2;
+  engine.position.set(0, 0, -4.2);
+  engine.visible = false;
+  g.add(engine);
+  g.userData.engine = engine;
+
+  // Jet state
+  g.userData.localPos = new THREE.Vector3(localX, 2, localZ);
+  g.userData.speed = 0;
+  g.userData.yaw = 0;
+  g.userData.pitch = 0;
+  g.userData.roll = 0;
+
+  scene.add(g);
+  return g;
+}
+
+function updateJet(dt) {
+  if (!jet || !inJet) return;
+
+  const j = jet;
+
+  // Controls
+  let throttle = mF ? 1 : (mB ? -0.3 : 0);
+  let turnInput = mR - mL;
+  let pitchInput = arrowLook.up - arrowLook.down;
+
+  // Joystick input
+  if (Math.abs(joyVec.y) > 0.1) throttle = -joyVec.y;
+  if (Math.abs(joyVec.x) > 0.1) turnInput = joyVec.x;
+
+  // Speed
+  j.userData.speed += throttle * JET_ACCEL * dt;
+  j.userData.speed *= 0.995; // Air drag
+  j.userData.speed = Math.max(0, Math.min(JET_MAX_SPEED, j.userData.speed));
+
+  // Turn (yaw) - banking effect
+  j.userData.yaw -= turnInput * JET_TURN_SPEED * dt * Math.min(1, j.userData.speed / 50);
+  j.userData.roll = -turnInput * 0.5; // Visual roll when turning
+
+  // Pitch
+  j.userData.pitch += pitchInput * JET_PITCH_SPEED * dt;
+  j.userData.pitch = Math.max(-0.8, Math.min(0.8, j.userData.pitch));
+
+  // If not pitching, slowly level out
+  if (pitchInput === 0) {
+    j.userData.pitch *= 0.98;
+  }
+
+  // Movement in 3D
+  const speed = j.userData.speed;
+  const yawAngle = j.userData.yaw;
+  const pitchAngle = j.userData.pitch;
+
+  // Forward direction considering pitch
+  const dx = Math.sin(yawAngle) * Math.cos(pitchAngle) * speed * dt;
+  const dy = Math.sin(pitchAngle) * speed * dt;
+  const dz = Math.cos(yawAngle) * Math.cos(pitchAngle) * speed * dt;
+
+  j.userData.localPos.x += dx;
+  j.userData.localPos.y += dy;
+  j.userData.localPos.z += dz;
+
+  // Minimum altitude
+  const groundY = getGroundHeight(j.userData.localPos.x, j.userData.localPos.z);
+  if (j.userData.localPos.y < groundY + 3) {
+    j.userData.localPos.y = groundY + 3;
+    if (j.userData.pitch < 0) j.userData.pitch = 0;
+  }
+
+  // Update position and rotation
+  j.position.copy(j.userData.localPos);
+  j.rotation.set(j.userData.pitch, j.userData.yaw, j.userData.roll);
+
+  // Engine effect
+  j.userData.engine.visible = j.userData.speed > 10;
+
+  // Camera follows behind jet
+  yaw = j.userData.yaw + Math.PI;
+  pitch = 0.3 - j.userData.pitch * 0.3;
+
+  // Update speedometer (convert m/s to MPH)
+  const mph = j.userData.speed * 2.237;
+  document.getElementById('spd-val').textContent = mph.toFixed(0);
+}
+
+function enterJet() {
+  if (!jet || !player) return;
+
+  const dist = player.userData.localPos.distanceTo(jet.userData.localPos);
+  if (dist < 12) {
+    inJet = true;
+    player.visible = false;
+    document.getElementById('speedometer').style.display = 'block';
+    setS('JET! W/S=throttle, A/D=turn, Arrows=pitch');
+    setTimeout(() => setS(''), 3000);
+    return true;
+  }
+  return false;
+}
+
+function exitJet() {
+  if (!inJet) return;
+
+  inJet = false;
+  player.visible = true;
+
+  // Place player near jet
+  player.userData.localPos.copy(jet.userData.localPos);
+  player.userData.localPos.y += 3;
+
+  jet.userData.speed = 0;
+  document.getElementById('speedometer').style.display = 'none';
 }
 
 // ═══ NIGHT MODE ═══
@@ -1050,6 +1215,28 @@ function drawMinimap() {
     }
   });
 
+  // Draw jet (white airplane icon)
+  if (jet && !inJet) {
+    const dx = (jet.userData.localPos.x - playerPos.x) / MINIMAP_SCALE;
+    const dz = (jet.userData.localPos.z - playerPos.z) / MINIMAP_SCALE;
+
+    if (Math.abs(dx) < cx && Math.abs(dz) < cy) {
+      minimapCtx.fillStyle = '#ffffff';
+      minimapCtx.save();
+      minimapCtx.translate(cx + dx, cy - dz);
+      minimapCtx.rotate(-jet.userData.yaw);
+      // Draw simple plane shape
+      minimapCtx.beginPath();
+      minimapCtx.moveTo(0, -6);
+      minimapCtx.lineTo(-4, 4);
+      minimapCtx.lineTo(0, 2);
+      minimapCtx.lineTo(4, 4);
+      minimapCtx.closePath();
+      minimapCtx.fill();
+      minimapCtx.restore();
+    }
+  }
+
   // Draw player (center, ROTATES to show facing direction)
   minimapCtx.save();
   minimapCtx.translate(cx, cy);
@@ -1155,8 +1342,16 @@ function getGroundHeight(localX, localZ) {
 function setupControls() {
   document.addEventListener('keydown', e => {
     if (e.code === 'KeyE') {
-      if (activeVehicle) exitVehicle();
-      else enterNearestVehicle();
+      if (inJet) {
+        exitJet();
+      } else if (activeVehicle) {
+        exitVehicle();
+      } else {
+        // Try jet first, then car
+        if (!enterJet()) {
+          enterNearestVehicle();
+        }
+      }
       return;
     }
     if (e.code === 'KeyJ') {
@@ -1547,8 +1742,10 @@ function gameLoop() {
     }
   }
 
-  // Update player or vehicle
-  if (activeVehicle) {
+  // Update player or vehicle or jet
+  if (inJet) {
+    updateJet(dt);
+  } else if (activeVehicle) {
     updateVehicle(dt);
   } else {
     updatePlayer(dt);
@@ -1743,23 +1940,39 @@ function updateWorldPositions() {
 }
 
 function updateCamera() {
-  const target = activeVehicle || player;
+  let target, camDist, camHeight, lookOffset;
+
+  if (inJet && jet) {
+    target = jet;
+    // Further back camera for jet, scales with speed
+    const speedFactor = Math.min(2, jet.userData.speed / 100);
+    camDist = 15 + speedFactor * 10;
+    camHeight = 4 + speedFactor * 3;
+    lookOffset = 0;
+  } else {
+    target = activeVehicle || player;
+    camDist = CAM_DIST;
+    camHeight = CAM_HEIGHT;
+    lookOffset = 1.0;
+  }
+
   if (!target) return;
 
   const tgtLocal = target.userData.localPos;
 
   // Camera position in local coords (Y is up)
   const camPos = new THREE.Vector3(
-    tgtLocal.x - Math.sin(yaw) * CAM_DIST,
-    tgtLocal.y + CAM_HEIGHT + Math.sin(pitch) * CAM_DIST * 0.5,
-    tgtLocal.z - Math.cos(yaw) * CAM_DIST
+    tgtLocal.x - Math.sin(yaw) * camDist,
+    tgtLocal.y + camHeight + Math.sin(pitch) * camDist * 0.5,
+    tgtLocal.z - Math.cos(yaw) * camDist
   );
 
-  // Smooth camera movement
-  camera.position.lerp(camPos, 0.12);
+  // Smooth camera movement (faster for jet)
+  const lerpSpeed = inJet ? 0.08 : 0.12;
+  camera.position.lerp(camPos, lerpSpeed);
 
-  // Look at target (upper body of character)
-  const lookAt = new THREE.Vector3(tgtLocal.x, tgtLocal.y + 1.0, tgtLocal.z);
+  // Look at target
+  const lookAt = new THREE.Vector3(tgtLocal.x, tgtLocal.y + lookOffset, tgtLocal.z);
   camera.lookAt(lookAt);
 }
 
@@ -1794,6 +2007,9 @@ async function startGame() {
 
     // Spawn zombies!
     spawnZombies();
+
+    // Spawn jet nearby
+    jet = createJet(25, 25);
 
     setupControls();
 
